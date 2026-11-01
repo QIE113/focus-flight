@@ -1,6 +1,8 @@
 package com.zhuanshi.feixing.ui.globe
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
@@ -13,51 +15,60 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.zhuanshi.feixing.data.Cities
 import com.zhuanshi.feixing.data.City
-import com.zhuanshi.feixing.data.WorldLand
+import com.zhuanshi.feixing.data.EarthTexture
 import com.zhuanshi.feixing.ui.theme.Gold
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val VISIBLE_Z = 0.02f
-private const val MIN_SCALE = 1f
-private const val MAX_SCALE = 16f
+private const val MIN_SCALE = 0.85f
+private const val MAX_SCALE = 12f
+private const val RAD2DEG = 57.29578f
 
-private data class Vec3(val x: Float, val y: Float, val z: Float)
-
-private fun vecFrom(lat: Double, lon: Double): Vec3 {
+private fun vecFrom(lat: Double, lon: Double): FloatArray {
     val la = Math.toRadians(lat)
     val lo = Math.toRadians(lon)
-    return Vec3(
+    return floatArrayOf(
         (cos(la) * sin(lo)).toFloat(),
         sin(la).toFloat(),
         (cos(la) * cos(lo)).toFloat()
     )
 }
 
-private fun vecFrom(city: City): Vec3 = vecFrom(city.lat, city.lon)
-
-private fun slerp(a: Vec3, b: Vec3, t: Float): Vec3 {
-    var dot = a.x * b.x + a.y * b.y + a.z * b.z
+private fun slerp(a: FloatArray, b: FloatArray, t: Float): FloatArray {
+    var dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
     dot = dot.coerceIn(-1f, 1f)
     val omega = Math.acos(dot.toDouble()).toFloat()
     if (omega < 1e-4f) return a
     val so = sin(omega)
     val ka = sin((1f - t) * omega) / so
     val kb = sin(t * omega) / so
-    return Vec3(a.x * ka + b.x * kb, a.y * ka + b.y * kb, a.z * ka + b.z * kb)
+    return floatArrayOf(
+        a[0] * ka + b[0] * kb,
+        a[1] * ka + b[1] * kb,
+        a[2] * ka + b[2] * kb
+    )
 }
 
-/** 把单位球面上的一点按当前视角旋转到视空间 */
-private class Camera(rotLon: Float, rotLat: Float) {
+/** 世界坐标 → 视空间：先绕地轴转经度，再抬头转纬度 */
+private class View(rotLon: Float, rotLat: Float) {
     private val loC: Float
     private val loS: Float
     private val laC: Float
@@ -72,47 +83,111 @@ private class Camera(rotLon: Float, rotLat: Float) {
         laS = sin(la).toFloat()
     }
 
-    fun rot(x: Float, y: Float, z: Float): Vec3 {
-        val x1 = x * loC + z * loS
-        val z1 = -x * loS + z * loC
-        val y2 = y * laC - z1 * laS
-        val z2 = y * laS + z1 * laC
-        return Vec3(x1, y2, z2)
+    fun px(x: Float, y: Float, z: Float): Float = x * loC + z * loS
+
+    fun pz(x: Float, y: Float, z: Float): Float = -x * loS + z * loC
+
+    fun py(x: Float, y: Float, z: Float): Float = y * laC - pz(x, y, z) * laS
+
+    fun depth(x: Float, y: Float, z: Float): Float = y * laS + pz(x, y, z) * laC
+
+    fun project(x: Float, y: Float, z: Float, cx: Float, cy: Float, r: Float): Offset? {
+        val d = depth(x, y, z)
+        if (d <= VISIBLE_Z) return null
+        return Offset(cx + px(x, y, z) * r, cy - py(x, y, z) * r)
     }
 
-    fun rot(v: Vec3): Vec3 = rot(v.x, v.y, v.z)
-}
-
-/** 预先把经纬度转成单位向量，省掉每帧的三角函数 */
-private object LandCache {
-    val rings: List<FloatArray> by lazy {
-        WorldLand.rings.map { flat ->
-            val pts = flat.size / 2
-            val out = FloatArray(pts * 3)
-            var j = 0
-            var i = 0
-            while (i < flat.size) {
-                val la = Math.toRadians(flat[i].toDouble())
-                val lo = Math.toRadians(flat[i + 1].toDouble())
-                out[j++] = (cos(la) * sin(lo)).toFloat()
-                out[j++] = sin(la).toFloat()
-                out[j++] = (cos(la) * cos(lo)).toFloat()
-                i += 2
-            }
-            out
-        }
+    fun projectLatLon(lat: Float, lon: Float, cx: Float, cy: Float, r: Float): Offset? {
+        val v = vecFrom(lat.toDouble(), lon.toDouble())
+        return project(v[0], v[1], v[2], cx, cy, r)
     }
 }
 
 object GlobeMath {
-    /** 返回 [rotLon, rotLat]，让整条航线出现在视野中央 */
+
+    /** 把镜头摆到航线中点，让整条大圆航线落在视野中央 */
     fun routeCamera(from: City, to: City): FloatArray {
-        val m = slerp(vecFrom(from), vecFrom(to), 0.5f)
-        val lat = Math.toDegrees(asin(m.y.coerceIn(-1f, 1f).toDouble())).toFloat()
-        val lon = Math.toDegrees(atan2(m.x.toDouble(), m.z.toDouble())).toFloat()
-        return floatArrayOf(-lon, lat)
+        val a = vecFrom(from.lat, from.lon)
+        val b = vecFrom(to.lat, to.lon)
+        val m = slerp(a, b, 0.5f)
+        val lat = asin(m[1].coerceIn(-1f, 1f).toDouble()) * RAD2DEG
+        val lon = atan2(m[0].toDouble(), m[2].toDouble()) * RAD2DEG
+        return floatArrayOf(-lon.toFloat(), lat.toFloat())
     }
 }
+
+/** 按当前镜头把整颗星球逐像素画进一张位图，供 Canvas 直接贴图 */
+private fun renderSphere(radiusPx: Int, rotLon: Float, rotLat: Float): ImageBitmap {
+    val d = radiusPx * 2
+    val out = IntArray(d * d)
+    val tex = EarthTexture.pixels
+    val tw = EarthTexture.WIDTH
+    val th = EarthTexture.HEIGHT
+    val lo = Math.toRadians(rotLon.toDouble())
+    val la = Math.toRadians(rotLat.toDouble())
+    val loC = cos(lo).toFloat()
+    val loS = sin(lo).toFloat()
+    val laC = cos(la).toFloat()
+    val laS = sin(la).toFloat()
+    val lightLat = Math.toRadians(16.0)
+    val lightLon = Math.toRadians(-42.0)
+    val lx = (cos(lightLat) * sin(lightLon)).toFloat()
+    val ly = sin(lightLat).toFloat()
+    val lz = (cos(lightLat) * cos(lightLon)).toFloat()
+
+    var index = 0
+    for (y in 0 until d) {
+        val vy = (radiusPx - y - 0.5f) / radiusPx
+        for (x in 0 until d) {
+            val vx = (x + 0.5f - radiusPx) / radiusPx
+            val rr = vx * vx + vy * vy
+            if (rr >= 1f) {
+                out[index++] = 0
+                continue
+            }
+            val rlen = sqrt(rr)
+            val vz = sqrt(1f - rr)
+            val wy = vy * laC + vz * laS
+            val z1 = -vy * laS + vz * laC
+            val wx = vx * loC - z1 * loS
+            val wz = vx * loS + z1 * loC
+            val lat = asin(wy.coerceIn(-1f, 1f)) * RAD2DEG
+            val lon = atan2(wx, wz) * RAD2DEG
+            var sx = ((lon + 180f) / 360f * tw).toInt()
+            if (sx < 0) sx = 0
+            if (sx > tw - 1) sx = tw - 1
+            var sy = ((90f - lat) / 180f * th).toInt()
+            if (sy < 0) sy = 0
+            if (sy > th - 1) sy = th - 1
+            val c = tex[sy * tw + sx]
+
+            val lit = wx * lx + wy * ly + wz * lz
+            val day = (lit * 0.5f + 0.5f).coerceIn(0f, 1f)
+            val shade = 0.14f + 0.98f * day * day
+            val rim = (1f - vz) * (1f - vz) * 0.5f
+
+            val rch = ((c shr 16) and 0xFF) * shade + 44f * rim
+            val gch = ((c shr 8) and 0xFF) * shade + 68f * rim
+            val bch = (c and 0xFF) * shade + 108f * rim
+
+            val edge = ((1f - rlen) * radiusPx).coerceIn(0f, 1f)
+            val a = (255f * edge).toInt().coerceIn(0, 255)
+            out[index++] = (a shl 24) or
+                (rch.toInt().coerceIn(0, 255) shl 16) or
+                (gch.toInt().coerceIn(0, 255) shl 8) or
+                bch.toInt().coerceIn(0, 255)
+        }
+    }
+    return Bitmap.createBitmap(out, d, d, Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+private val OCEAN_LABELS = listOf(
+    Triple(6f, -150f, "太平洋"),
+    Triple(-6f, -25f, "大西洋"),
+    Triple(-22f, 78f, "印度洋"),
+    Triple(78f, 20f, "北冰洋"),
+    Triple(-62f, 20f, "南冰洋")
+)
 
 @Composable
 fun GlobeMap(
@@ -124,6 +199,7 @@ fun GlobeMap(
     rotLon: Float = 0f,
     rotLat: Float = 0f,
     interactive: Boolean = true,
+    stars: Boolean = false,
     onCamera: (Float, Float, Float) -> Unit = { _, _, _ -> },
     onTap: (() -> Unit)? = null
 ) {
@@ -136,11 +212,11 @@ fun GlobeMap(
         Modifier.pointerInput(Unit) {
             detectTransformGestures { _, pan, zoom, _ ->
                 val next = (curScale.value * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                val factor = 0.34f / (0.55f + next * 0.45f)
+                val factor = 96f / (56f + next * 34f)
                 camera.value(
                     next,
                     curLon.value + pan.x * factor,
-                    (curLat.value - pan.y * factor).coerceIn(-88f, 88f)
+                    (curLat.value - pan.y * factor).coerceIn(-89f, 89f)
                 )
             }
         }
@@ -149,7 +225,7 @@ fun GlobeMap(
     }
 
     val act = onTap
-    val tap: Modifier = if (act != null) {
+    val tapModifier: Modifier = if (act != null) {
         Modifier.pointerInput(act) {
             detectTapGestures { act() }
         }
@@ -157,36 +233,187 @@ fun GlobeMap(
         Modifier
     }
 
-    Canvas(modifier.then(gesture).then(tap)) {
-        val base = min(size.width, size.height) * 0.44f
+    val starSeed = remember { java.util.Random(20260304L) }
+    val starPoints = remember {
+        val arr = FloatArray(240)
+        var i = 0
+        while (i < arr.size) {
+            arr[i] = starSeed.nextFloat()
+            arr[i + 1] = starSeed.nextFloat()
+            i += 2
+        }
+        arr
+    }
+
+    val lonKey = (rotLon * 4f).roundToInt()
+    val latKey = (rotLat * 4f).roundToInt()
+
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = modifier.then(gesture).then(tapModifier)
+    ) {
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+        val base = min(w, h) * 0.46f
         val radius = base * scale
+        val bucket = ((radius / 6f).toInt() * 6).coerceIn(90, 420)
+        val sphere = remember(bucket, lonKey, latKey) {
+            renderSphere(bucket, lonKey / 4f, latKey / 4f)
+        }
+        Canvas(Modifier.fillMaxSize()) {
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val cam = Camera(rotLon, rotLat)
 
-        if (scale < 1.9f) {
-            val atmo = base * 1.42f
+        if (stars) {
+            var i = 0
+            while (i < starPoints.size) {
+                val sx = starPoints[i] * size.width
+                val sy = starPoints[i + 1] * size.height
+                val twinkle = ((i % 7) + 1) / 9f
+                drawCircle(Color.White.copy(alpha = 0.12f + twinkle * 0.4f), 0.9f, Offset(sx, sy))
+                i += 2
+            }
+        }
+
+        if (scale < 2.2f) {
+            val glow = radius * 1.16f
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Gold.copy(alpha = 0.12f),
-                        Gold.copy(alpha = 0.04f),
+                        Color(0xFF2A6BD4).copy(alpha = 0.20f),
+                        Color(0xFF1B3E86).copy(alpha = 0.07f),
                         Color.Transparent
                     ),
                     center = Offset(cx, cy),
-                    radius = atmo
+                    radius = glow
                 ),
-                radius = atmo,
+                radius = glow,
                 center = Offset(cx, cy)
             )
         }
 
-        drawSphere(cx, cy, radius)
-        drawLand(cam, cx, cy, radius)
-        drawGraticule(cam, cx, cy, radius, scale)
-        drawRoute(from, to, cam, cx, cy, radius, scale, progress)
-        drawCities(from, to, cam, cx, cy, radius)
+        val half = (bucket * scale).toInt()
+        drawImage(
+            image = sphere,
+            dstOffset = IntOffset((cx - half).toInt(), (cy - half).toInt()),
+            dstSize = IntSize(half * 2, half * 2)
+        )
+
+        val view = View(rotLon, rotLat)
+        drawRoute(from, to, view, cx, cy, radius, scale, progress)
+        drawCities(from, to, view, cx, cy, radius, scale)
+        drawOceanLabels(view, cx, cy, radius, scale)
+        }
     }
+}
+
+private fun DrawScope.drawRoute(
+    from: City,
+    to: City,
+    view: View,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    scale: Float,
+    progress: Float
+) {
+    val a = vecFrom(from.lat, from.lon)
+    val b = vecFrom(to.lat, to.lon)
+    val path = Path()
+    var started = false
+    val steps = 160
+    for (i in 0..steps) {
+        val v = slerp(a, b, i.toFloat() / steps.toFloat())
+        val p = view.project(v[0], v[1], v[2], cx, cy, radius)
+        if (p == null) {
+            started = false
+            continue
+        }
+        if (!started) {
+            path.moveTo(p.x, p.y)
+            started = true
+        } else {
+            path.lineTo(p.x, p.y)
+        }
+    }
+    drawPath(
+        path = path,
+        color = Color(0xFFDCE7F5).copy(alpha = 0.85f),
+        style = Stroke(width = if (scale > 2.5f) 3f else 1.8f)
+    )
+
+    val pa = view.project(a[0], a[1], a[2], cx, cy, radius)
+    val pb = view.project(b[0], b[1], b[2], cx, cy, radius)
+    if (pa != null) drawCircle(Color.White, if (scale > 2.5f) 5f else 3.5f, pa)
+    if (pb != null) drawCircle(Color.White, if (scale > 2.5f) 5f else 3.5f, pb)
+
+    if (progress < 0f) return
+    val t = progress.coerceIn(0f, 1f)
+    val cur = slerp(a, b, t)
+    val pc = view.project(cur[0], cur[1], cur[2], cx, cy, radius) ?: return
+    val glow = if (scale > 2.5f) 22f else 15f
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.White.copy(alpha = 0.45f), Color.Transparent),
+            center = pc,
+            radius = glow
+        ),
+        radius = glow,
+        center = pc
+    )
+    drawCircle(Color.White, if (scale > 2.5f) 5f else 4f, pc)
+}
+
+private fun DrawScope.drawCities(
+    from: City,
+    to: City,
+    view: View,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    scale: Float
+) {
+    val focus = setOf(from.code, to.code)
+    for (city in Cities.all) {
+        val p = view.projectLatLon(city.lat.toFloat(), city.lon.toFloat(), cx, cy, radius) ?: continue
+        if (focus.contains(city.code)) {
+            drawCircle(Gold.copy(alpha = 0.9f), if (scale > 2.5f) 3.2f else 2.2f, p)
+            if (scale > 1.6f) {
+                drawLabel(city.name, p.x + 8f, p.y + 4f, Color(0xFFFFF1C8), 11f, left = true)
+            }
+        } else {
+            drawCircle(Color.White.copy(alpha = 0.35f), 1.3f, p)
+        }
+    }
+}
+
+private fun DrawScope.drawOceanLabels(
+    view: View,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    scale: Float
+) {
+    if (scale < 1.05f) return
+    for (t in OCEAN_LABELS) {
+        val p = view.projectLatLon(t.first, t.second, cx, cy, radius) ?: continue
+        drawLabel(t.third, p.x, p.y, Color(0xFF7FA8C9).copy(alpha = 0.75f), 10f, left = false)
+    }
+}
+
+private fun DrawScope.drawLabel(
+    text: String,
+    x: Float,
+    y: Float,
+    color: Color,
+    sizePx: Float,
+    left: Boolean
+) {
+    val paint = android.graphics.Paint()
+    paint.isAntiAlias = true
+    paint.color = color.toArgb()
+    paint.textSize = sizePx
+    paint.textAlign = if (left) android.graphics.Paint.Align.LEFT else android.graphics.Paint.Align.CENTER
+    drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)
 }
 
 @Composable
@@ -195,6 +422,7 @@ fun GlobeCanvas(
     to: City,
     modifier: Modifier = Modifier,
     progress: Float = -1f,
+    stars: Boolean = true,
     onTap: (() -> Unit)? = null
 ) {
     val cam = remember(from.code, to.code) { GlobeMath.routeCamera(from, to) }
@@ -211,6 +439,7 @@ fun GlobeCanvas(
         rotLon = lon,
         rotLat = lat,
         interactive = true,
+        stars = stars,
         onCamera = { s, lo, la ->
             scale = s
             lon = lo
@@ -218,227 +447,4 @@ fun GlobeCanvas(
         },
         onTap = onTap
     )
-}
-
-private fun DrawScope.drawSphere(cx: Float, cy: Float, radius: Float) {
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                Color(0xFF0E2A1B),
-                Color(0xFF081711),
-                Color(0xFF03080A)
-            ),
-            center = Offset(cx - radius * 0.30f, cy - radius * 0.34f),
-            radius = radius * 1.65f
-        ),
-        radius = radius,
-        center = Offset(cx, cy)
-    )
-
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(Color.Transparent, Color(0xFF02040A)),
-            center = Offset(cx + radius * 0.45f, cy + radius * 0.45f),
-            radius = radius * 1.5f
-        ),
-        radius = radius,
-        center = Offset(cx, cy)
-    )
-
-    drawCircle(
-        color = Gold.copy(alpha = 0.16f),
-        radius = radius,
-        center = Offset(cx, cy),
-        style = Stroke(width = 1.2f)
-    )
-}
-
-private fun DrawScope.drawLand(cam: Camera, cx: Float, cy: Float, radius: Float) {
-    val path = Path()
-    for (ring in LandCache.rings) {
-        var started = false
-        var i = 0
-        while (i < ring.size) {
-            val v = cam.rot(ring[i], ring[i + 1], ring[i + 2])
-            if (v.z > VISIBLE_Z) {
-                val px = cx + v.x * radius
-                val py = cy - v.y * radius
-                if (!started) {
-                    path.moveTo(px, py)
-                    started = true
-                } else {
-                    path.lineTo(px, py)
-                }
-            } else {
-                started = false
-            }
-            i += 3
-        }
-    }
-    drawPath(path, color = Color(0xFF17402A))
-    drawPath(path, color = Gold.copy(alpha = 0.22f), style = Stroke(width = 1f))
-}
-
-private fun DrawScope.drawGraticule(
-    cam: Camera,
-    cx: Float,
-    cy: Float,
-    radius: Float,
-    scale: Float
-) {
-    if (scale < 1.12f) return
-    val alpha = ((scale - 1.12f) / 2.4f).coerceIn(0f, 1f) * 0.20f
-    val color = Gold.copy(alpha = alpha)
-    val stroke = Stroke(width = 0.8f)
-
-    var lat = -60.0
-    while (lat <= 60.0) {
-        val p = Path()
-        var started = false
-        var lon = -180.0
-        while (lon <= 180.0) {
-            val v = cam.rot(vecFrom(lat, lon))
-            if (v.z > VISIBLE_Z) {
-                val px = cx + v.x * radius
-                val py = cy - v.y * radius
-                if (!started) {
-                    p.moveTo(px, py)
-                    started = true
-                } else {
-                    p.lineTo(px, py)
-                }
-            } else {
-                started = false
-            }
-            lon += 6.0
-        }
-        drawPath(p, color = color, style = stroke)
-        lat += 20.0
-    }
-
-    var lon2 = -180.0
-    while (lon2 < 180.0) {
-        val p = Path()
-        var started = false
-        var lat2 = -84.0
-        while (lat2 <= 84.0) {
-            val v = cam.rot(vecFrom(lat2, lon2))
-            if (v.z > VISIBLE_Z) {
-                val px = cx + v.x * radius
-                val py = cy - v.y * radius
-                if (!started) {
-                    p.moveTo(px, py)
-                    started = true
-                } else {
-                    p.lineTo(px, py)
-                }
-            } else {
-                started = false
-            }
-            lat2 += 6.0
-        }
-        drawPath(p, color = color, style = stroke)
-        lon2 += 20.0
-    }
-}
-
-private fun DrawScope.drawRoute(
-    from: City,
-    to: City,
-    cam: Camera,
-    cx: Float,
-    cy: Float,
-    radius: Float,
-    scale: Float,
-    progress: Float
-) {
-    val a = vecFrom(from)
-    val b = vecFrom(to)
-    val path = Path()
-    var started = false
-    val steps = 120
-    for (i in 0..steps) {
-        val v = cam.rot(slerp(a, b, i.toFloat() / steps.toFloat()))
-        if (v.z <= VISIBLE_Z) {
-            started = false
-            continue
-        }
-        val px = cx + v.x * radius
-        val py = cy - v.y * radius
-        if (!started) {
-            path.moveTo(px, py)
-            started = true
-        } else {
-            path.lineTo(px, py)
-        }
-    }
-    drawPath(
-        path = path,
-        color = Gold.copy(alpha = 0.78f),
-        style = Stroke(width = if (scale > 3f) 3.2f else 2f)
-    )
-
-    val endA = cam.rot(a)
-    if (endA.z > VISIBLE_Z) {
-        drawCircle(
-            color = Color(0xFFFFF3CE),
-            radius = if (scale > 3f) 6f else 4.2f,
-            center = Offset(cx + endA.x * radius, cy - endA.y * radius)
-        )
-    }
-    val endB = cam.rot(b)
-    if (endB.z > VISIBLE_Z) {
-        drawCircle(
-            color = Color(0xFFFFF3CE),
-            radius = if (scale > 3f) 6f else 4.2f,
-            center = Offset(cx + endB.x * radius, cy - endB.y * radius)
-        )
-    }
-
-    if (progress < 0f) return
-    val p = cam.rot(slerp(a, b, progress.coerceIn(0f, 1f)))
-    if (p.z <= VISIBLE_Z) return
-    val px = cx + p.x * radius
-    val py = cy - p.y * radius
-    val glow = if (scale > 3f) 26f else 18f
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(Gold.copy(alpha = 0.55f), Color.Transparent),
-            center = Offset(px, py),
-            radius = glow
-        ),
-        radius = glow,
-        center = Offset(px, py)
-    )
-    drawCircle(color = Color(0xFFFFF3CE), radius = if (scale > 3f) 6.5f else 5f, center = Offset(px, py))
-    drawCircle(
-        color = Gold.copy(alpha = 0.7f),
-        radius = if (scale > 3f) 12f else 9f,
-        center = Offset(px, py),
-        style = Stroke(width = 1.2f)
-    )
-}
-
-private fun DrawScope.drawCities(
-    from: City,
-    to: City,
-    cam: Camera,
-    cx: Float,
-    cy: Float,
-    radius: Float
-) {
-    val focus = setOf(from.code, to.code)
-    Cities.all.forEach { city ->
-        val p = cam.rot(vecFrom(city))
-        if (p.z <= VISIBLE_Z) return@forEach
-        val px = cx + p.x * radius
-        val py = cy - p.y * radius
-        val isFocus = focus.contains(city.code)
-        if (isFocus) return@forEach
-        drawCircle(
-            color = Gold.copy(alpha = 0.55f),
-            radius = 1.9f,
-            center = Offset(px, py)
-        )
-    }
 }

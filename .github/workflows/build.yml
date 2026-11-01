@@ -31,24 +31,28 @@ jobs:
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.2.0-debug.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.3.0-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: focus-flight-debug-apk
-          path: focus-flight-v1.2.0-debug.apk
+          path: focus-flight-v1.3.0-debug.apk
           if-no-files-found: error
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.0
-          name: 专注飞行 v1.2.0 · 撕票 + 自由缩放地图
+          tag_name: v1.3.0
+          name: 专注飞行 v1.3.0 · 照着视频重做全流程
           body: |
-            撕票改成真的「划一点撕一点」：按住右侧票根往右拖，纸边跟着手指一点点裂开，
-            还有震动反馈，撕到 80% 才起飞。
-            地图换成自带世界陆地轮廓的球面地图，双指 1×~16× 自由缩放、单指拖动旋转，
-            飞行时飞机沿大圆航线前进。
-            依旧 Kotlin + Jetpack Compose 原生实现，无网络权限，全部离线。
-          files: focus-flight-v1.2.0-debug.apk
+            看完那条抖音之后的改版：
+            · 流程对齐视频：选座（A/C/D/F × 01-10）→ 选专注场景 → 登机牌 → 舱门关闭「出发！」→ 飞行
+            · 登机牌改成视频里的样子：深色半透明卡片浮在地球上，大号机场代码 + 中间飞行时长 +
+              座位/登机时间/场景/距离，底部条码，右侧票根可以按住往右撕开
+            · 地球不再是纯色球：内置程序化生成的 1024×512 行星贴图（海面/雨林/温带/荒漠/极冠 + 噪点），
+              逐像素球面投影，带昼夜明暗和大气边缘光，还有星空
+            · 地图页改成铺开的卫星底图，双指 1x-24x 缩放、单指平移，航线和飞机实时跟随
+            · 飞行页左右两列圆钮：暂停 / 静音；通话 / 归位 / 地图 / 缩放
+            仍然全程离线、没有网络权限、不要任何 API Key。
+          files: focus-flight-v1.3.0-debug.apk
