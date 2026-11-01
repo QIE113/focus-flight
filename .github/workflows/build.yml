@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,13 +22,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Show Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls "$ANDROID_HOME/platforms" || true
-          ls "$ANDROID_HOME/build-tools" || true
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -34,9 +30,23 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.0.0-debug.apk"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: focus-flight-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: focus-flight-v1.0.0-debug.apk
           if-no-files-found: error
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: 专注飞行 v1.0.0 (Android 原生版)
+          body: |
+            专注飞行 · Focus Flight —— Kotlin + Jetpack Compose 原生实现，不是 WebView 套壳。
+            无网络权限，全部数据本地存储。
+            下载下方 focus-flight-v1.0.0-debug.apk 直接安装（debug 签名，仅用于自测）。
+          files: focus-flight-v1.0.0-debug.apk
