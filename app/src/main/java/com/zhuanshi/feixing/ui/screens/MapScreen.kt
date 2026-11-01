@@ -176,7 +176,7 @@ fun MapScreen(
 
             val pxPerDeg = worldW / 360f
             fun sx(lon: Double): Float = (w / 2f + lonDelta(lon, centerLon.toDouble()).toFloat() * pxPerDeg)
-            fun sy(lat: Double): Float = (h / 2f - (lat - centerLat) * pxPerDeg)
+            fun sy(lat: Double): Float = (h / 2f - ((lat - centerLat) * pxPerDeg).toFloat())
 
             val path = Path()
             var first = true
