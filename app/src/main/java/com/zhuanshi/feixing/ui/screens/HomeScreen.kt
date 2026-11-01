@@ -25,7 +25,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +67,8 @@ fun HomeScreen(
     val distance = remember(from.code, to.code) { Geo.distanceKm(from, to) }
     val minutes = remember(from.code, to.code) { Geo.durationMinutes(from, to) }
 
+    var showMap by remember { mutableStateOf(false) }
+
     val tabs = listOf(
         TabSpec("我的", "记录"),
         TabSpec("趋势", lastSevenLabel(records)),
@@ -100,11 +105,19 @@ fun HomeScreen(
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(from.code + " → " + to.code, color = TextDim, fontSize = 12.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(Geo.formatDuration(minutes), color = TextPrimary.copy(alpha = 0.78f), fontSize = 12.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(Geo.formatDistance(distance), color = TextPrimary.copy(alpha = 0.78f), fontSize = 12.sp)
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        Geo.formatDuration(minutes),
+                        color = TextPrimary.copy(alpha = 0.78f),
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        Geo.formatDistance(distance),
+                        color = TextPrimary.copy(alpha = 0.78f),
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         "更改",
                         color = Gold,
@@ -114,13 +127,22 @@ fun HomeScreen(
                 }
             }
 
-            GlobeCanvas(
-                from = from,
-                to = to,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            )
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                GlobeCanvas(
+                    from = from,
+                    to = to,
+                    modifier = Modifier.fillMaxSize(),
+                    onTap = { showMap = true }
+                )
+                Text(
+                    "双指可放大 · 点地图看全图",
+                    color = TextDim,
+                    fontSize = 10.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 6.dp)
+                )
+            }
 
             Column(
                 Modifier.fillMaxWidth(),
@@ -220,6 +242,15 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        if (showMap) {
+            MapScreen(
+                from = from,
+                to = to,
+                progress = -1f,
+                onClose = { showMap = false }
+            )
         }
     }
 }

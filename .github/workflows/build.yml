@@ -31,22 +31,24 @@ jobs:
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.1.0-debug.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.2.0-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: focus-flight-debug-apk
-          path: focus-flight-v1.1.0-debug.apk
+          path: focus-flight-v1.2.0-debug.apk
           if-no-files-found: error
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.0
-          name: 专注飞行 v1.1.0 · 撕票登机版
+          tag_name: v1.2.0
+          name: 专注飞行 v1.2.0 · 撕票 + 自由缩放地图
           body: |
-            点「开始旅程」先选从哪到哪，时长按真实大圆距离自动算好（巡航 840 km/h + 起降 26 分钟），
-            再向右撕开登机牌票根才真正起飞。
-            Kotlin + Jetpack Compose 原生实现，无网络权限，数据全部本地。
-          files: focus-flight-v1.1.0-debug.apk
+            撕票改成真的「划一点撕一点」：按住右侧票根往右拖，纸边跟着手指一点点裂开，
+            还有震动反馈，撕到 80% 才起飞。
+            地图换成自带世界陆地轮廓的球面地图，双指 1×~16× 自由缩放、单指拖动旋转，
+            飞行时飞机沿大圆航线前进。
+            依旧 Kotlin + Jetpack Compose 原生实现，无网络权限，全部离线。
+          files: focus-flight-v1.2.0-debug.apk
