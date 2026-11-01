@@ -26,7 +26,19 @@ jobs:
           gradle-version: "8.7"
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            {
+              echo "### 编译错误";
+              echo '```';
+              grep -E "^e: " build.log | head -80;
+              echo '```';
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit $code
+          fi
 
       - name: Rename APK
         run: |
@@ -47,12 +59,11 @@ jobs:
           body: |
             这一版只做两件事：把地球跑顺，把每个动作做成动画。
 
-            · 地球改成「一次预计算 + 逐帧查表」的渲染器：投影、光照、边缘抗锯齿在启动时算好，
-              每帧只做整数查表和一次贴图更新，球体固定 720px 内，稳定 60fps
-            · 所有按钮按下都有回弹缩放（spring），页面进场有淡入上浮，列表逐条出现
+            · 地球改成「一次预计算 + 逐帧查表」的渲染器，每帧只做整数查表和贴图更新，稳定 60fps
+            · 所有按钮按下都有回弹缩放，页面进场有淡入上浮，列表逐条出现
             · 流程改成：选目的地 → 选座位 → 选场景 → 登机牌 → 撕票 → 落舱
             · 登机牌票根：按住往右划，划一点撕一点（带震动），松手后票根往下掉落消失
             · 撕完票自动进入「推镜头」：地球从 1x 推到 4.8x 对准飞机，再淡入飞行舱
-            · 飞行页新增暂停/静音/地图/归位/免扰圆钮，航图页 1x–14x 双指缩放
+            · 飞行页新增暂停/静音/地图/归位/免扰圆钮，航图页支持双指缩放
             · 仍然全程离线、无网络权限、不需要任何 API Key
           files: out/focus-flight-v1.4.0-debug.apk

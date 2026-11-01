@@ -79,8 +79,8 @@ object SphereMath {
 class SphereRenderer(val diameter: Int) {
     private val n = diameter * diameter
     private val tex = EarthTexture.pixels
-    private val texW = EarthTexture.WIDTH
-    private val texH = EarthTexture.HEIGHT
+    private val texW = 1024
+    private val texH = 512
     private val mask = texW - 1
     private val uBase = ShortArray(n)
     private val vIdx = ShortArray(n)
