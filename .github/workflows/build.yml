@@ -31,22 +31,22 @@ jobs:
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.0.0-debug.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.1.0-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: focus-flight-debug-apk
-          path: focus-flight-v1.0.0-debug.apk
+          path: focus-flight-v1.1.0-debug.apk
           if-no-files-found: error
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: 专注飞行 v1.0.0 (Android 原生版)
+          tag_name: v1.1.0
+          name: 专注飞行 v1.1.0 · 撕票登机版
           body: |
-            专注飞行 · Focus Flight —— Kotlin + Jetpack Compose 原生实现，不是 WebView 套壳。
-            无网络权限，全部数据本地存储。
-            下载下方 focus-flight-v1.0.0-debug.apk 直接安装（debug 签名，仅用于自测）。
-          files: focus-flight-v1.0.0-debug.apk
+            点「开始旅程」先选从哪到哪，时长按真实大圆距离自动算好（巡航 840 km/h + 起降 26 分钟），
+            再向右撕开登机牌票根才真正起飞。
+            Kotlin + Jetpack Compose 原生实现，无网络权限，数据全部本地。
+          files: focus-flight-v1.1.0-debug.apk

@@ -13,6 +13,12 @@ object Geo {
 
     private const val EARTH_RADIUS_KM = 6371.0
 
+    /** 起降滑行 + 爬升下降的固定开销（分钟） */
+    private const val TAXI_MINUTES = 26.0
+
+    /** 巡航速度（km/h） */
+    private const val CRUISE_KMH = 840.0
+
     fun distanceKm(a: City, b: City): Double {
         val dLat = Math.toRadians(b.lat - a.lat)
         val dLon = Math.toRadians(b.lon - a.lon)
@@ -23,11 +29,15 @@ object Geo {
         return 2 * EARTH_RADIUS_KM * asin(min(1.0, sqrt(h)))
     }
 
-    /** 整段航程的分钟数：约 27 分钟起降滑行 + 巡航 780 km/h */
+    /** 真实航程：大圆距离 / 巡航速度 + 起降开销 */
     fun durationMinutes(a: City, b: City): Int {
-        val hours = 0.45 + distanceKm(a, b) / 780.0
-        return (hours * 60.0).roundToInt().coerceAtLeast(25)
+        val hours = TAXI_MINUTES / 60.0 + distanceKm(a, b) / CRUISE_KMH
+        return (hours * 60.0).roundToInt().coerceAtLeast(20)
     }
+
+    /** 十进制小时，例如 7.61 */
+    fun durationHoursText(a: City, b: City): String =
+        String.format(Locale.CHINA, "%.2f", durationMinutes(a, b) / 60.0)
 
     fun formatDuration(minutes: Int): String {
         val h = minutes / 60

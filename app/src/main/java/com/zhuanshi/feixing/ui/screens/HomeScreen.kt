@@ -122,7 +122,10 @@ fun HomeScreen(
                     .fillMaxWidth()
             )
 
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(percent = 50))
@@ -132,6 +135,12 @@ fun HomeScreen(
                 ) {
                     Text("开始旅程", color = NightBg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "点击后先选「从哪到哪」，时长按真实航程自动生成",
+                    color = TextDim,
+                    fontSize = 10.sp
+                )
             }
 
             Spacer(Modifier.height(16.dp))

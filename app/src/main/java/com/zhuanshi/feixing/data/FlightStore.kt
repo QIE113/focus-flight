@@ -53,6 +53,12 @@ class FlightStore(context: Context) {
         sp.edit().putString(KEY_RECORDS, arr.toString()).apply()
     }
 
+    fun originCode(): String = sp.getString(KEY_ORIGIN, "") ?: ""
+
+    fun saveOrigin(code: String) {
+        sp.edit().putString(KEY_ORIGIN, code).apply()
+    }
+
     fun destinationCode(): String = sp.getString(KEY_ROUTE, "") ?: ""
 
     fun saveDestination(code: String) {
@@ -62,5 +68,6 @@ class FlightStore(context: Context) {
     companion object {
         private const val KEY_RECORDS = "records"
         private const val KEY_ROUTE = "destination"
+        private const val KEY_ORIGIN = "origin"
     }
 }
