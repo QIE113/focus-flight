@@ -1,9 +1,14 @@
 package com.zhuanshi.feixing.ui.screens
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,782 +18,653 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zhuanshi.feixing.data.City
-import com.zhuanshi.feixing.data.FlightRecord
 import com.zhuanshi.feixing.data.Geo
-import com.zhuanshi.feixing.ui.globe.GlobeMath
-import com.zhuanshi.feixing.ui.globe.GlobeMap
+import com.zhuanshi.feixing.ui.Appear
+import com.zhuanshi.feixing.ui.GoldButton
+import com.zhuanshi.feixing.ui.HairLine
+import com.zhuanshi.feixing.ui.KeyValueRow
+import com.zhuanshi.feixing.ui.RoundAction
+import com.zhuanshi.feixing.ui.TopBar
+import com.zhuanshi.feixing.ui.pressScale
+import com.zhuanshi.feixing.ui.globe.Globe
 import com.zhuanshi.feixing.ui.theme.Gold
-import com.zhuanshi.feixing.ui.theme.NightBg
-import com.zhuanshi.feixing.ui.theme.PanelBg
 import com.zhuanshi.feixing.ui.theme.TextDim
 import com.zhuanshi.feixing.ui.theme.TextPrimary
 import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
-import kotlin.random.Random
-
-private enum class Stage { SEAT, SCENE, TICKET, GATE, FLY }
-
-private val SEAT_COLUMNS = listOf("A", "C", "D", "F")
-private val SCENES = listOf("专注", "锻炼", "冥想", "阅读", "工作")
+import kotlinx.coroutines.launch
+private val COLUMNS = listOf("A", "C", "D", "F")
 
 @Composable
-fun FlightSessionScreen(
+fun SeatScreen(
     from: City,
     to: City,
-    onFinish: (FlightRecord) -> Unit
+    selected: String,
+    onBack: () -> Unit,
+    onNext: (String) -> Unit
 ) {
-    val totalMinutes = remember(from.code, to.code) { Geo.durationMinutes(from, to) }
-    val totalSeconds = totalMinutes * 60
-    val distance = remember(from.code, to.code) { Geo.distanceKm(from, to) }
-
-    var stage by remember { mutableStateOf(Stage.SEAT) }
-    var seat by remember { mutableStateOf("06F") }
-    var scene by remember { mutableStateOf("专注") }
-    var showMap by remember { mutableStateOf(false) }
-    var remain by remember { mutableIntStateOf(totalSeconds) }
-    var running by remember { mutableStateOf(true) }
-    var muted by remember { mutableStateOf(false) }
-    var finished by remember { mutableStateOf(false) }
-
-    fun finishWith(minutesSpent: Int) {
-        if (finished) return
-        finished = true
-        onFinish(
-            FlightRecord(
-                fromCode = from.code,
-                fromName = from.name,
-                toCode = to.code,
-                toName = to.name,
-                minutes = minutesSpent,
-                finishedAt = if (minutesSpent > 0) System.currentTimeMillis() else 0L
-            )
-        )
-    }
-
-    LaunchedEffect(stage) {
-        if (stage != Stage.FLY) return@LaunchedEffect
-        while (remain > 0 && !finished) {
-            if (running) {
-                delay(1000)
-                remain -= 1
-            } else {
-                delay(200)
+    var pick by remember { mutableStateOf(selected) }
+    Column(Modifier.fillMaxSize()) {
+        TopBar(title = "选个座位", sub = from.code + " → " + to.code + " · " + Geo.formatDuration(Geo.durationMinutes(from, to)), onBack = onBack)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            COLUMNS.forEach { c ->
+                Text(c, color = TextDim, fontSize = 11.sp, modifier = Modifier.size(46.dp), textAlign = TextAlign.Center)
             }
         }
-        if (remain <= 0 && !finished) finishWith(totalMinutes)
-    }
-
-    val progress = if (totalSeconds == 0) 0f else {
-        ((totalSeconds - remain).toFloat() / totalSeconds.toFloat()).coerceIn(0f, 1f)
-    }
-
-    Box(Modifier.fillMaxSize().background(NightBg)) {
-        when (stage) {
-            Stage.SEAT -> SeatStage(
-                from = from,
-                to = to,
-                seat = seat,
-                onSeat = { seat = it },
-                onNext = { stage = Stage.SCENE }
-            )
-            Stage.SCENE -> SceneStage(
-                seat = seat,
-                scene = scene,
-                onScene = { scene = it },
-                onBack = { stage = Stage.SEAT },
-                onNext = { stage = Stage.TICKET }
-            )
-            Stage.TICKET -> TicketStage(
-                from = from,
-                to = to,
-                seat = seat,
-                scene = scene,
-                distance = distance,
-                minutes = totalMinutes,
-                onBoarded = { stage = Stage.GATE }
-            )
-            Stage.GATE -> GateStage(
-                from = from,
-                to = to,
-                scene = scene,
-                onDepart = { stage = Stage.FLY }
-            )
-            Stage.FLY -> FlyingStage(
-                from = from,
-                to = to,
-                distance = distance,
-                minutes = totalMinutes,
-                remain = remain,
-                progress = progress,
-                running = running,
-                muted = muted,
-                onTogglePause = { running = !running },
-                onToggleMute = { muted = !muted },
-                onOpenMap = { showMap = true },
-                onFinishEarly = {
-                    val elapsed = (totalSeconds - remain) / 60
-                    finishWith(if (elapsed >= 1) elapsed else 0)
-                }
-            )
+        Column(
+            Modifier.fillMaxWidth().weight(1f).padding(horizontal = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterVertically)
+        ) {
+            var row = 1
+            while (row <= 10) {
+                SeatRow(
+                    row = row,
+                    pick = pick,
+                    onPick = { pick = it }
+                )
+                row++
+            }
         }
-
-        if (showMap) {
-            MapScreen(
-                from = from,
-                to = to,
-                progress = if (stage == Stage.FLY) progress else -1f,
-                onClose = { showMap = false }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = if (pick.isEmpty()) "选一个靠窗还是过道？" else "已选 " + pick + " 号座",
+                color = if (pick.isEmpty()) TextDim else Gold,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
             )
+            GoldButton(text = "下一步 · 选场景", enabled = pick.isNotEmpty(), onClick = { if (pick.isNotEmpty()) onNext(pick) })
         }
     }
 }
 
 @Composable
-private fun SeatStage(
+private fun SeatRow(row: Int, pick: String, onPick: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SeatCell(code = COLUMNS[0] + rowName(row), active = pick == COLUMNS[0] + rowName(row), onClick = onPick);
+        SeatCell(code = COLUMNS[1] + rowName(row), active = pick == COLUMNS[1] + rowName(row), onClick = onPick);
+        Text(rowName(row), color = TextDim.copy(alpha = 0.6f), fontSize = 11.sp)
+        SeatCell(code = COLUMNS[2] + rowName(row), active = pick == COLUMNS[2] + rowName(row), onClick = onPick);
+        SeatCell(code = COLUMNS[3] + rowName(row), active = pick == COLUMNS[3] + rowName(row), onClick = onPick);
+    }
+}
+
+private fun rowName(row: Int): String = if (row < 10) "0" + row else "" + row
+
+@Composable
+private fun SeatCell(code: String, active: Boolean, onClick: (String) -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .size(width = 46.dp, height = 38.dp)
+            .pressScale(src, 0.86f)
+            .background(if (active) Gold else Color(0x0DFFFFFF), RoundedCornerShape(11.dp))
+            .border(1.dp, if (active) Gold else Color(0xFF242B37), RoundedCornerShape(11.dp))
+            .clickable(interactionSource = src, indication = null) { onClick(code) },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = code,
+            color = if (active) Color(0xFF05070C) else TextPrimary.copy(alpha = 0.7f),
+            fontSize = 11.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+private data class SceneItem(val name: String, val glyph: String, val desc: String)
+
+private val SCENES = listOf(
+    SceneItem("专注", "◎", "只做一件事，直到落地"),
+    SceneItem("阅读", "▤", "翻几页一直想读的书"),
+    SceneItem("冥想", "◍", "闭眼，听引擎的白噪音"),
+    SceneItem("工作", "▦", "把起飞前的清单清空"),
+    SceneItem("锻炼", "△", "拉伸、呼吸、放松肩颈")
+)
+
+@Composable
+fun SceneScreen(
     from: City,
     to: City,
-    seat: String,
-    onSeat: (String) -> Unit,
-    onNext: () -> Unit
+    selected: String,
+    onBack: () -> Unit,
+    onNext: (String) -> Unit
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("选座", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                from.code + " → " + to.code,
-                color = TextDim,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 6.dp)
-            )
+    var pick by remember { mutableStateOf(if (selected.isEmpty()) "专注" else selected) }
+    Column(Modifier.fillMaxSize()) {
+        TopBar(title = "这趟飞行做什么", sub = from.code + " → " + to.code, onBack = onBack)
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Globe(
+                modifier = Modifier.fillMaxSize(),
+                from = from,
+                to = to,
+                spin = true,
+                sphereFill = 0.82f
+            );
         }
-        Spacer(Modifier.height(4.dp))
-        Text("已选 " + seat, color = Gold, fontSize = 11.sp)
-        Spacer(Modifier.height(18.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Text("A", color = TextDim, fontSize = 11.sp)
-            Text("C", color = TextDim, fontSize = 11.sp)
-            Spacer(Modifier.width(28.dp))
-            Text("D", color = TextDim, fontSize = 11.sp)
-            Text("F", color = TextDim, fontSize = 11.sp)
-        }
-        Spacer(Modifier.height(8.dp))
-
-        for (row in 1..10) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                for (i in SEAT_COLUMNS.indices) {
-                    val code = (if (row < 10) "0" else "") + row + SEAT_COLUMNS[i]
-                    SeatCell(
-                        code = code,
-                        taken = (row * 7 + i * 3) % 5 == 0,
-                        selected = seat == code,
-                        onClick = { onSeat(code) }
-                    )
-                    if (i == 1) {
-                        Text(
-                            if (row < 10) "0" + row else row.toString(),
-                            color = TextDim.copy(alpha = 0.7f),
-                            fontSize = 11.sp,
-                            modifier = Modifier.width(28.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            SCENES.forEachIndexed { index, item ->
+                Appear(delayMillis = 60 * index) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .background(
+                                if (pick == item.name) Gold.copy(alpha = 0.12f) else Color(0x0AFFFFFF),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (pick == item.name) Gold.copy(alpha = 0.6f) else Color(0xFF1E242E),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { pick = item.name }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(item.glyph, color = if (pick == item.name) Gold else TextDim, fontSize = 16.sp)
+                        Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                            Text(item.name, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(item.desc, color = TextDim, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        if (pick == item.name) Text("已选", color = Gold, fontSize = 10.sp)
                     }
                 }
             }
         }
-
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(percent = 50))
-                .background(TextPrimary)
-                .clickable { onNext() }
-                .padding(vertical = 15.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("确认", color = NightBg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun SeatCell(code: String, taken: Boolean, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(46.dp, 38.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                when {
-                    selected -> Color(0xFFE9EEF5)
-                    taken -> Color(0xFF161A22)
-                    else -> Color(0xFF1E2430)
-                }
-            )
-            .clickable(enabled = !taken) { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        if (selected) {
-            Text(code, color = NightBg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+            GoldButton(text = "下一步 · 登机牌", onClick = { onNext(pick) })
         }
     }
 }
 
 @Composable
-private fun SceneStage(
+fun BoardingPassScreen(
+    from: City,
+    to: City,
     seat: String,
     scene: String,
-    onScene: (String) -> Unit,
+    minutes: Int,
+    km: Double,
     onBack: () -> Unit,
-    onNext: () -> Unit
+    onBoarded: () -> Unit
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(18.dp))
-        Text(
-            "座位 " + seat,
-            color = TextDim,
-            fontSize = 11.sp,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "你想要在什么场景下专注？",
-            color = TextPrimary,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(22.dp))
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val gap = remember { Animatable(0f) }
+    val fall = remember { Animatable(0f) }
+    var torn by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf(true) }
+    val maxGap = with(density) { 210.dp.toPx() }
+    val threshold = maxGap * 0.3f
 
-        val rows = SCENES.chunked(3)
-        for (group in rows) {
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                for (s in group) {
-                    val active = scene == s
+    Box(Modifier.fillMaxSize()) {
+        Globe(
+            modifier = Modifier.fillMaxSize(),
+            from = from,
+            to = to,
+            spin = true,
+            showRoute = true,
+            sphereFill = 0.98f
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(Color(0xE605070C), Color(0x6605070C), Color(0xEE05070C))
+                )
+            )
+        )
+        TopBar(
+            title = "登机牌",
+            sub = from.code + " → " + to.code + " · " + scene + " · " + seat,
+            onBack = if (fall.value > 0.1f) ({}) else onBack
+        );
+
+        Column(
+            Modifier.fillMaxWidth().align(Alignment.Center).padding(horizontal = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(Modifier.fillMaxWidth().height(340.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(end = 94.dp)
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(Color(0xF40A0E15))
+                        .border(1.dp, Color(0xFF232A36), RoundedCornerShape(26.dp))
+                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "BOARDING PASS",
+                            color = TextDim,
+                            fontSize = 9.sp,
+                            letterSpacing = 2.5.sp
+                        )
+                        Text("专注飞行", color = Gold.copy(alpha = 0.8f), fontSize = 9.sp, letterSpacing = 2.sp)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = from.code,
+                            color = TextPrimary,
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.Light,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = "  ✈  ",
+                            color = Gold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = to.code,
+                            color = TextPrimary,
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.Light,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                    Text(
+                        text = from.name + " → " + to.name,
+                        color = TextDim,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = Geo.durationHoursText(from, to),
+                            color = Gold,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Light
+                        )
+                        Text(
+                            text = " 小时",
+                            color = TextDim,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    HairLine()
+                    Spacer(Modifier.height(10.dp))
+                    KeyValueRow("座位", seat.ifEmpty { "--" })
+                    KeyValueRow("场景", scene)
+                    KeyValueRow("距离", Geo.formatDistance(km))
+                    KeyValueRow("登机口", "FOCUS-" + to.code)
+                    Spacer(Modifier.weight(1f))
+                    Barcode(Modifier.fillMaxWidth().height(30.dp).padding(end = 6.dp))
+                }
+
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(94.dp)
+                        .fillMaxHeight()
+                        .graphicsLayer {
+                            translationX = gap.value
+                            translationY = gap.value * 0.10f + fall.value * 900f
+                            rotationZ = gap.value * 0.05f + fall.value * 36f
+                            alpha = 1f - fall.value * 0.92f
+                        }
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    hint = false
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                onDrag = { change, drag ->
+                                    change.consume()
+                                    val next = (gap.value + drag.x).coerceIn(0f, maxGap)
+                                    scope.launch { gap.snapTo(next) }
+                                    if (next > threshold && !torn) {
+                                        torn = true
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (gap.value > threshold) {
+                                        scope.launch {
+                                            gap.animateTo(maxGap * 1.3f, tween(200));
+                                            fall.animateTo(1f, tween(640, easing = FastOutSlowInEasing));
+                                            onBoarded()
+                                        }
+                                    } else {
+                                        torn = false
+                                        scope.launch { gap.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = 900f)) }
+                                    }
+                                },
+                                onDragCancel = {
+                                    torn = false
+                                    scope.launch { gap.animateTo(0f, tween(220)) }
+                                }
+                            )
+                        }
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(Color(0xFF121924))
+                        .border(1.dp, Color(0xFF2A3240), RoundedCornerShape(26.dp))
+                ) {
                     Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (active) Color(0xFFE9EEF5) else Color(0xFF1B2029))
-                            .clickable { onScene(s) }
-                            .padding(vertical = 14.dp),
+                        Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            s,
-                            color = if (active) NightBg else TextPrimary,
-                            fontSize = 13.sp
+                            text = "撕下票根",
+                            color = TextDim.copy(alpha = 0.7f),
+                            fontSize = 10.sp,
+                            modifier = Modifier.rotate(90f)
+                        )
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Text(
+                            text = seat.ifEmpty { "--" },
+                            color = Gold,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Light
                         )
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(Color(0xFF1B2029))
-                    .clickable { onBack() }
-                    .padding(horizontal = 26.dp, vertical = 15.dp)
-            ) {
-                Text("返回", color = TextPrimary, fontSize = 14.sp)
-            }
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(TextPrimary)
-                    .clickable { onNext() }
-                    .padding(vertical = 15.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("确认", color = NightBg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Appear(delayMillis = 200) {
+                Text(
+                    text = if (hint) "按住右边票根，往右划开" else "松手就会撕开",
+                    color = if (torn) Gold else TextDim,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.8.sp,
+                    modifier = Modifier.padding(top = 22.dp)
+                );
             }
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun TicketStage(
+private fun Barcode(modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.Bottom) {
+        var i = 0
+        while (i < 42) {
+            val w = if (i % 4 == 0) 2.2.dp else 1.dp
+            val hf = 0.45f + ((i * 41) % 55) / 100f
+            Box(
+                Modifier
+                    .width(w)
+                    .fillMaxHeight(hf)
+                    .background(Color(0xCCFFFFFF))
+            )
+            Spacer(Modifier.width(2.dp))
+            i++
+        }
+    }
+}
+
+@Composable
+fun FlightScreen(
     from: City,
     to: City,
     seat: String,
     scene: String,
-    distance: Double,
     minutes: Int,
-    onBoarded: () -> Unit
+    km: Double,
+    onArrived: () -> Unit
 ) {
-    val cam = remember(from.code, to.code) { GlobeMath.routeCamera(from, to) }
+    val total = minutes * 60
+    var elapsed by remember { mutableIntStateOf(0) }
+    var paused by remember { mutableStateOf(false) }
+    var muted by remember { mutableStateOf(false) }
+    var mapOpen by remember { mutableStateOf(false) }
+    var focusMode by remember { mutableStateOf(false) }
+    val zoom = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) { zoom.animateTo(1f, tween(1700, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(paused) {
+        while (!paused && elapsed < total) {
+            delay(1000)
+            elapsed += 1
+        }
+    }
+    LaunchedEffect(elapsed) { if (elapsed >= total) onArrived() }
+
+    val progress = if (total <= 0) 0f else elapsed.toFloat() / total
+    val remainSec = (total - elapsed).coerceAtLeast(0)
+    val remainKm = km * (1f - progress)
 
     Box(Modifier.fillMaxSize()) {
-        GlobeMap(
-            from = from,
-            to = to,
-            modifier = Modifier.fillMaxSize(),
-            scale = 1.05f,
-            rotLon = cam[0],
-            rotLat = cam[1],
-            interactive = true,
-            stars = true
-        )
-
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val z = 1f + zoom.value * 3.8f
+                scaleX = z
+                scaleY = z
+                translationX = -zoom.value * 90f
+                translationY = -zoom.value * 40f
+            }
         ) {
-            Spacer(Modifier.height(14.dp))
-            Text("BOARDING PASS", color = Gold, fontSize = 10.sp, letterSpacing = 3.sp)
-            Spacer(Modifier.weight(1f))
-
-            BoardingPass(
+            Globe(
+                modifier = Modifier.fillMaxSize(),
                 from = from,
                 to = to,
-                seat = seat,
-                scene = scene,
-                distance = distance,
-                minutes = minutes,
-                onBoarded = onBoarded
-            )
-
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "按住右侧票根往右拖，划一点撕一点",
-                color = TextDim,
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.height(10.dp))
+                progress = progress,
+                spin = false,
+                showRoute = true,
+                sphereFill = 0.92f
+            );
         }
-    }
-}
-
-@Composable
-private fun BoardingPass(
-    from: City,
-    to: City,
-    seat: String,
-    scene: String,
-    distance: Double,
-    minutes: Int,
-    onBoarded: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    val maxTear = with(density) { 150.dp.toPx() }
-    val stubWidth = 76.dp
-
-    var tear by remember { mutableFloatStateOf(0f) }
-    var lastTick by remember { mutableIntStateOf(-1) }
-    var boarded by remember { mutableStateOf(false) }
-
-    val frac = (tear / maxTear).coerceIn(0f, 1f)
-
-    fun tick() {
-        val step = (frac * 12f).toInt()
-        if (step != lastTick) {
-            lastTick = step
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        }
-    }
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(206.dp)
-    ) {
         Box(
-            Modifier
-                .fillMaxSize()
-                .padding(end = stubWidth)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xE6151A22))
-                .padding(horizontal = 18.dp, vertical = 16.dp)
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(Color(0xF205070C), Color(0x9905070C), Color(0xF705070C))
+                )
+            )
+        )
+
+        val hud = ((zoom.value - 0.45f) / 0.55f).coerceIn(0f, 1f)
+        Column(
+            Modifier.fillMaxSize().graphicsLayer { alpha = hud }
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column {
-                        Text(
-                            from.code,
-                            color = Color(0xFFEDEFF2),
-                            fontSize = 34.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Text(from.name, color = TextDim, fontSize = 11.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("✈", color = TextDim, fontSize = 13.sp)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            Geo.formatDuration(minutes),
-                            color = TextPrimary,
-                            fontSize = 13.sp
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            to.code,
-                            color = Color(0xFFEDEFF2),
-                            fontSize = 34.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                        Text(to.name, color = TextDim, fontSize = 11.sp)
-                    }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 26.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(from.code, color = TextPrimary, fontSize = 18.sp, letterSpacing = 2.sp)
+                    Text(from.name, color = TextDim, fontSize = 10.sp)
                 }
-
-                Spacer(Modifier.weight(1f))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    PassCell("座位", seat)
-                    PassCell("登机时间", "现在")
-                    PassCell("场景", scene)
-                    PassCell("距离", Geo.formatDistance(distance))
+                Column(horizontalAlignment = Alignment.Center) {
+                    Text("· " + scene + " ·", color = Gold.copy(alpha = 0.85f), fontSize = 10.sp, letterSpacing = 2.sp)
+                    Text(seat, color = TextDim, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                 }
-                Spacer(Modifier.height(10.dp))
-                Barcode(Modifier.fillMaxWidth().height(30.dp))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                    Text(to.code, color = TextPrimary, fontSize = 18.sp, letterSpacing = 2.sp)
+                    Text(to.name, color = TextDim, fontSize = 10.sp)
+                }
             }
-        }
 
-        Box(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .width(stubWidth)
-                .fillMaxHeight()
-                .graphicsLayer {
-                    translationX = tear
-                    rotationZ = frac * 9f
-                }
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xE6151A22))
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { },
-                        onDragEnd = { },
-                        onDragCancel = { },
-                        onDrag = { change, drag ->
-                            change.consume()
-                            if (boarded) return@detectDragGestures
-                            tear = (tear + drag.x).coerceIn(0f, maxTear)
-                            tick()
-                            if (tear / maxTear >= 0.75f) {
-                                boarded = true
-                                onBoarded()
-                            }
-                        }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                Column(
+                    Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "剩余",
+                        color = TextDim,
+                        fontSize = 10.sp,
+                        letterSpacing = 3.sp
                     )
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Barcode(Modifier.width(20.dp).height(96.dp), vertical = true)
-                Spacer(Modifier.height(10.dp))
-                Text(seat, color = Gold, fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("撕 →", color = TextDim, fontSize = 10.sp)
+                    Text(
+                        text = Geo.formatClock(remainSec),
+                        color = TextPrimary,
+                        fontSize = 46.sp,
+                        fontWeight = FontWeight.Light,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                    Text(
+                        text = "剩余 " + Geo.formatDistance(remainKm) + "  ·  " + (progress * 100f).toInt() + "%",
+                        color = TextDim,
+                        fontSize = 11.sp
+                    )
+                }
+                Column(
+                    Modifier.align(Alignment.CenterStart).padding(start = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    RoundAction(
+                        label = if (paused) "继续" else "暂停",
+                        sub = "计时",
+                        active = paused,
+                        onClick = { paused = !paused }
+                    )
+                    RoundAction(
+                        label = if (muted) "有声" else "静音",
+                        sub = "环境",
+                        active = muted,
+                        onClick = { muted = !muted }
+                    )
+                }
+                Column(
+                    Modifier.align(Alignment.CenterEnd).padding(end = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    RoundAction(label = "地图", sub = "航图", active = false, onClick = { mapOpen = true })
+                    RoundAction(label = "归位", sub = "重置", active = false, onClick = {})
+                    RoundAction(
+                        label = if (focusMode) "已锁" else "免扰",
+                        sub = "专注",
+                        active = focusMode,
+                        onClick = { focusMode = !focusMode }
+                    )
+                }
             }
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .background(Color(0x99101419), RoundedCornerShape(22.dp))
+                    .border(1.dp, Color(0xFF1B212B), RoundedCornerShape(22.dp))
+                    .padding(horizontal = 18.dp, vertical = 14.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("本趟航程", color = TextDim, fontSize = 10.sp, letterSpacing = 2.sp)
+                    Text(Geo.formatDuration(minutes), color = Gold, fontSize = 10.sp)
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0x22FFFFFF))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Gold)
+                    )
+                }
+                Text(
+                    text = if (paused) "已暂停，时间停在这里" else "已在空中 · 放下手机，做一件事",
+                    color = TextDim.copy(alpha = 0.75f),
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+            Spacer(Modifier.height(24.dp));
         }
 
-        Canvas(Modifier.fillMaxSize()) {
-            val x = size.width - stubWidth.toPx() - tear
-            drawLine(
-                color = Color(0xFF6B7484).copy(alpha = 0.55f),
-                start = Offset(x, 12f),
-                end = Offset(x, size.height - 12f),
-                strokeWidth = 2f,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 9f), 0f)
+        if (mapOpen) {
+            MapScreen(
+                from = from,
+                to = to,
+                progress = progress,
+                remainingSeconds = remainSec,
+                remainingKm = remainKm,
+                onClose = { mapOpen = false }
             )
         }
     }
 }
 
 @Composable
-private fun PassCell(label: String, value: String) {
-    Column {
-        Text(label, color = TextDim, fontSize = 9.sp)
-        Spacer(Modifier.height(3.dp))
-        Text(value, color = Color(0xFFE7EBF1), fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun Barcode(modifier: Modifier = Modifier, vertical: Boolean = false) {
-    Canvas(modifier) {
-        val rnd = Random(20260304)
-        if (vertical) {
-            var y = 0f
-            while (y < size.height) {
-                val wBar = 1f + rnd.nextFloat() * 2.2f
-                val gap = 1f + rnd.nextFloat() * 2f
-                if (rnd.nextFloat() > 0.35f) {
-                    drawRect(
-                        color = Color(0xFFD7DCE4),
-                        topLeft = Offset((size.width - wBar) / 2f, y),
-                        size = androidx.compose.ui.geometry.Size(wBar, gap)
-                    )
-                }
-                y += gap
-            }
-        } else {
-            var x = 0f
-            while (x < size.width) {
-                val wBar = 1.2f + rnd.nextFloat() * 2.6f
-                val gap = 1.2f + rnd.nextFloat() * 2.4f
-                if (rnd.nextFloat() > 0.3f) {
-                    drawRect(
-                        color = Color(0xFFD7DCE4),
-                        topLeft = Offset(x, 0f),
-                        size = androidx.compose.ui.geometry.Size(wBar, size.height)
-                    )
-                }
-                x += wBar + gap
-            }
-        }
-    }
-}
-
-@Composable
-private fun GateStage(
-    from: City,
-    to: City,
-    scene: String,
-    onDepart: () -> Unit
-) {
+fun DoneScreen(from: City, to: City, minutes: Int, km: Double, onAgain: () -> Unit) {
     Column(
-        Modifier
-            .fillMaxSize()
-            .background(NightBg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        Modifier.fillMaxSize().padding(horizontal = 28.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("舱门关闭，", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(6.dp))
-        Text("飞行即将开始", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(18.dp))
-        Text(
-            from.name + " → " + to.name + "　·　" + scene,
-            color = TextDim,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(56.dp))
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(TextPrimary)
-                .clickable { onDepart() }
-                .padding(horizontal = 42.dp, vertical = 14.dp)
-        ) {
-            Text("出发！", color = NightBg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Appear {
+            Text("已落地", color = Gold, fontSize = 12.sp, letterSpacing = 6.sp);
         }
-    }
-}
-
-@Composable
-private fun FlyingStage(
-    from: City,
-    to: City,
-    distance: Double,
-    minutes: Int,
-    remain: Int,
-    progress: Float,
-    running: Boolean,
-    muted: Boolean,
-    onTogglePause: () -> Unit,
-    onToggleMute: () -> Unit,
-    onOpenMap: () -> Unit,
-    onFinishEarly: () -> Unit
-) {
-    val cam = remember(from.code, to.code) { GlobeMath.routeCamera(from, to) }
-    var zoom by remember(from.code, to.code) { mutableFloatStateOf(1.35f) }
-    var lon by remember(from.code, to.code) { mutableFloatStateOf(cam[0]) }
-    var lat by remember(from.code, to.code) { mutableFloatStateOf(cam[1]) }
-
-    Box(Modifier.fillMaxSize().background(Color(0xFF04060B))) {
-        GlobeMap(
-            from = from,
-            to = to,
-            modifier = Modifier.fillMaxSize(),
-            progress = progress,
-            scale = zoom,
-            rotLon = lon,
-            rotLat = lat,
-            interactive = true,
-            stars = true,
-            onCamera = { z, lo, la ->
-                zoom = z
-                lon = lo
-                lat = la
-            }
-        )
-
-        Column(
-            Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("专注飞行", color = Gold, fontSize = 11.sp, letterSpacing = 2.sp)
-            Spacer(Modifier.height(6.dp))
+        Appear(delayMillis = 120) {
             Text(
-                from.code + " → " + to.code,
+                text = to.name,
                 color = TextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
-            )
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Light,
+                letterSpacing = 4.sp,
+                modifier = Modifier.padding(top = 12.dp)
+            );
+        }
+        Appear(delayMillis = 220) {
             Text(
-                (progress * 100f).roundToInt().toString() + "%",
+                text = from.code + " → " + to.code + " · " + Geo.formatDuration(minutes) + " · " + Geo.formatDistance(km),
                 color = TextDim,
-                fontSize = 11.sp
-            )
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 14.dp)
+            );
         }
-
-        Column(
-            Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            RoundButton(if (running) "❚❚" else "▶") { onTogglePause() }
-            RoundButton(if (muted) "🔇" else "🔊", active = !muted) { onToggleMute() }
-        }
-
-        Column(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            RoundButton("✆") { onFinishEarly() }
-            RoundButton("✈", active = true) {
-                zoom = 1.35f
-                lon = cam[0]
-                lat = cam[1]
-            }
-            RoundButton("▦") { onOpenMap() }
-            RoundButton("◷") {
-                zoom = (zoom * 1.18f).coerceAtMost(6f)
+        Appear(delayMillis = 320) {
+            Box(Modifier.padding(top = 34.dp)) {
+                GoldButton(text = "再来一次", onClick = onAgain);
             }
         }
-
-        Row(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text("剩余飞行时间", color = TextDim, fontSize = 10.sp)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    Geo.formatDuration((remain + 59) / 60),
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("剩余飞行距离", color = TextDim, fontSize = 10.sp)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    Geo.formatDistance(distance * (1.0 - progress)),
-                    color = Gold,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoundButton(label: String, active: Boolean = false, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(46.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .background(if (active) Color(0xFFE9EEF5) else Color(0xCC1A1F29))
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            color = if (active) NightBg else TextPrimary,
-            fontSize = 15.sp
-        )
     }
 }

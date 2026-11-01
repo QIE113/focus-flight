@@ -5,13 +5,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,39 +18,41 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.7'
+          gradle-version: "8.7"
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "focus-flight-v1.3.0-debug.apk"
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.4.0-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: focus-flight-debug-apk
-          path: focus-flight-v1.3.0-debug.apk
-          if-no-files-found: error
+          name: focus-flight-v1.4.0-debug
+          path: out/focus-flight-v1.4.0-debug.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.0
-          name: 专注飞行 v1.3.0 · 照着视频重做全流程
+          tag_name: v1.4.0
+          name: 专注飞行 v1.4.0 · 60fps 星球 + 全流程动效
           body: |
-            看完那条抖音之后的改版：
-            · 流程对齐视频：选座（A/C/D/F × 01-10）→ 选专注场景 → 登机牌 → 舱门关闭「出发！」→ 飞行
-            · 登机牌改成视频里的样子：深色半透明卡片浮在地球上，大号机场代码 + 中间飞行时长 +
-              座位/登机时间/场景/距离，底部条码，右侧票根可以按住往右撕开
-            · 地球不再是纯色球：内置程序化生成的 1024×512 行星贴图（海面/雨林/温带/荒漠/极冠 + 噪点），
-              逐像素球面投影，带昼夜明暗和大气边缘光，还有星空
-            · 地图页改成铺开的卫星底图，双指 1x-24x 缩放、单指平移，航线和飞机实时跟随
-            · 飞行页左右两列圆钮：暂停 / 静音；通话 / 归位 / 地图 / 缩放
-            仍然全程离线、没有网络权限、不要任何 API Key。
-          files: focus-flight-v1.3.0-debug.apk
+            这一版只做两件事：把地球跑顺，把每个动作做成动画。
+
+            · 地球改成「一次预计算 + 逐帧查表」的渲染器：投影、光照、边缘抗锯齿在启动时算好，
+              每帧只做整数查表和一次贴图更新，球体固定 720px 内，稳定 60fps
+            · 所有按钮按下都有回弹缩放（spring），页面进场有淡入上浮，列表逐条出现
+            · 流程改成：选目的地 → 选座位 → 选场景 → 登机牌 → 撕票 → 落舱
+            · 登机牌票根：按住往右划，划一点撕一点（带震动），松手后票根往下掉落消失
+            · 撕完票自动进入「推镜头」：地球从 1x 推到 4.8x 对准飞机，再淡入飞行舱
+            · 飞行页新增暂停/静音/地图/归位/免扰圆钮，航图页 1x–14x 双指缩放
+            · 仍然全程离线、无网络权限、不需要任何 API Key
+          files: out/focus-flight-v1.4.0-debug.apk
