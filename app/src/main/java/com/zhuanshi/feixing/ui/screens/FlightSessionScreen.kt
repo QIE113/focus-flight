@@ -515,7 +515,7 @@ fun FlightScreen(
                     Text(from.code, color = TextPrimary, fontSize = 18.sp, letterSpacing = 2.sp)
                     Text(from.name, color = TextDim, fontSize = 10.sp)
                 }
-                Column(horizontalAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("· " + scene + " ·", color = Gold.copy(alpha = 0.85f), fontSize = 10.sp, letterSpacing = 2.sp)
                     Text(seat, color = TextDim, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
                 }
