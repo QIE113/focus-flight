@@ -1,12 +1,9 @@
 package com.zhuanshi.feixing.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,248 +12,134 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zhuanshi.feixing.data.City
-import com.zhuanshi.feixing.data.FlightRecord
 import com.zhuanshi.feixing.data.Geo
-import com.zhuanshi.feixing.ui.globe.GlobeCanvas
-import com.zhuanshi.feixing.ui.theme.BarBg
+import com.zhuanshi.feixing.ui.Appear
+import com.zhuanshi.feixing.ui.GoldButton
+import com.zhuanshi.feixing.ui.GhostButton
+import com.zhuanshi.feixing.ui.pressScale
+import com.zhuanshi.feixing.ui.globe.Globe
 import com.zhuanshi.feixing.ui.theme.Gold
 import com.zhuanshi.feixing.ui.theme.NightBg
-import com.zhuanshi.feixing.ui.theme.PanelBg
 import com.zhuanshi.feixing.ui.theme.TextDim
 import com.zhuanshi.feixing.ui.theme.TextPrimary
-import java.util.Calendar
-
-private data class TabSpec(val title: String, val sub: String)
 
 @Composable
 fun HomeScreen(
     from: City,
     to: City,
-    records: List<FlightRecord>,
-    tab: Int,
-    onTab: (Int) -> Unit,
-    onChangeRoute: () -> Unit,
-    onPickDestination: (City) -> Unit,
-    onStart: () -> Unit
+    minutes: Int,
+    km: Double,
+    onPickRoute: () -> Unit,
+    onRecords: () -> Unit,
+    onTrend: () -> Unit,
+    onWorld: () -> Unit
 ) {
-    val hour = remember {
-        Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    }
-    val greeting = remember(hour) { Geo.greeting(hour) }
-    val distance = remember(from.code, to.code) { Geo.distanceKm(from, to) }
-    val minutes = remember(from.code, to.code) { Geo.durationMinutes(from, to) }
-
-    var showMap by remember { mutableStateOf(false) }
-
-    val tabs = listOf(
-        TabSpec("我的", "记录"),
-        TabSpec("趋势", lastSevenLabel(records)),
-        TabSpec("世界", "航线")
-    )
-
-    Box(Modifier.fillMaxSize().background(NightBg)) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 30.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.padding(start = 22.dp, end = 22.dp, top = 22.dp)) {
-                Text(greeting, color = TextDim, fontSize = 12.sp)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        from.name,
-                        color = TextPrimary,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "更换",
-                        color = Gold,
-                        fontSize = 12.sp,
-                        modifier = Modifier
-                            .padding(bottom = 7.dp)
-                            .clickable { onChangeRoute() }
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(from.code + " → " + to.code, color = TextDim, fontSize = 12.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        Geo.formatDuration(minutes),
-                        color = TextPrimary.copy(alpha = 0.78f),
-                        fontSize = 12.sp
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        Geo.formatDistance(distance),
-                        color = TextPrimary.copy(alpha = 0.78f),
-                        fontSize = 12.sp
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "更改",
-                        color = Gold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.clickable { onChangeRoute() }
-                    )
-                }
-            }
-
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                GlobeCanvas(
-                    from = from,
-                    to = to,
-                    modifier = Modifier.fillMaxSize(),
-                    onTap = { showMap = true }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "专注飞行",
+                    color = TextPrimary,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 3.sp
                 )
                 Text(
-                    "双指可放大 · 点地图看全图",
+                    text = "把这段时间交给天空",
                     color = TextDim,
-                    fontSize = 10.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 6.dp)
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 5.dp)
                 )
             }
-
-            Column(
-                Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(percent = 50))
-                        .background(TextPrimary)
-                        .clickable { onStart() }
-                        .padding(horizontal = 38.dp, vertical = 15.dp)
-                ) {
-                    Text("开始旅程", color = NightBg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "点击后先选「从哪到哪」，时长按真实航程自动生成",
-                    color = TextDim,
-                    fontSize = 10.sp
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(BarBg)
-                    .padding(vertical = 4.dp)
-            ) {
-                tabs.forEachIndexed { idx, spec ->
-                    val active = tab == idx
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(18.dp))
-                            .clickable { onTab(if (tab == idx) -1 else idx) }
-                            .padding(vertical = 12.dp)
-                    ) {
-                        Text(
-                            spec.title,
-                            color = if (active) Gold else TextPrimary,
-                            fontSize = 15.sp,
-                            modifier = Modifier.padding(start = 15.dp)
-                        )
-                        Text(
-                            spec.sub,
-                            color = TextDim,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(start = 15.dp, top = 3.dp)
-                        )
-                    }
-                }
-            }
+            Text("· " + Geo.greeting(9), color = Gold.copy(alpha = 0.8f), fontSize = 11.sp)
         }
 
-        AnimatedVisibility(
-            visible = tab >= 0,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 320.dp, max = 520.dp)
-                        .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
-                        .background(PanelBg)
-                        .clickable(enabled = false) {}
-                        .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 26.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Text(
-                            "收起",
-                            color = TextDim,
-                            fontSize = 12.sp,
-                            modifier = Modifier.clickable { onTab(-1) }
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        when (tab) {
-                            0 -> RecordScreen(records)
-                            1 -> TrendScreen(records)
-                            else -> WorldScreen(from, onPickDestination)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (showMap) {
-            MapScreen(
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Globe(
+                modifier = Modifier.fillMaxSize(),
                 from = from,
                 to = to,
-                progress = -1f,
-                onClose = { showMap = false }
+                progress = 0f,
+                spin = true,
+                sphereFill = 0.9f
             )
+            Text(
+                text = "拖动不了，但它一直在转",
+                color = TextDim.copy(alpha = 0.5f),
+                fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)
+            )
+        }
+
+        Appear(delayMillis = 120) {
+            RouteCard(from = from, to = to, minutes = minutes, km = km)
+        }
+
+        Appear(delayMillis = 220) {
+            Box(
+                Modifier.fillMaxWidth().padding(top = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                GoldButton(text = "选择目的地 · 出发", onClick = onPickRoute)
+            }
+        }
+
+        Appear(delayMillis = 300) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 26.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(Modifier.weight(1f)) { GhostButton("世界", Modifier.fillMaxWidth(), onWorld) }
+                Box(Modifier.weight(1f)) { GhostButton("记录", Modifier.fillMaxWidth(), onRecords) }
+                Box(Modifier.weight(1f)) { GhostButton("趋势", Modifier.fillMaxWidth(), onTrend) }
+            }
         }
     }
 }
 
-private fun lastSevenLabel(records: List<FlightRecord>): String {
-    if (records.isEmpty()) return "还没有"
-    val n = if (records.size >= 7) 7 else records.size
-    return "最近 " + n + " 次"
+@Composable
+private fun RouteCard(from: City, to: City, minutes: Int, km: Double) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp)
+            .background(Color(0x99101419), RoundedCornerShape(22.dp))
+            .border(1.dp, Color(0xFF1E242E), RoundedCornerShape(22.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text(from.code, color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
+                Text(from.name, color = TextDim, fontSize = 10.sp)
+            }
+            Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                Text("✈", color = Gold, fontSize = 15.sp)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(to.code, color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
+                Text(to.name, color = TextDim, fontSize = 10.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(Geo.formatDuration(minutes), color = Gold, fontSize = 12.sp)
+            Text(Geo.formatDistance(km), color = TextDim, fontSize = 12.sp)
+        }
+    }
 }
