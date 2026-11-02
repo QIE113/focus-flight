@@ -83,7 +83,8 @@ fun FlightApp() {
                     to = to,
                     minutes = minutes,
                     km = km,
-                    onPickRoute = { picker = true },
+                    onRoute = { a, b -> from = a; to = b },
+                    onPickRoute = { stage = Stage.Seat },
                     onRecords = { stage = Stage.Records },
                     onTrend = { stage = Stage.Trend },
                     onWorld = { stage = Stage.World }

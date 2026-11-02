@@ -43,49 +43,41 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.6.1-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.6.2-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: focus-flight-v1.6.1-debug
-          path: out/focus-flight-v1.6.1-debug.apk
+          name: focus-flight-v1.6.2-debug
+          path: out/focus-flight-v1.6.2-debug.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.6.1
-          name: 专注飞行 v1.6.1 · 真地图 + 推镜头进机场
+          tag_name: v1.6.2
+          name: 专注飞行 v1.6.2 · 真地图 + 推镜头进机场
           body: |
-            v1.6.1 —— 修掉上一版没落地的改动，并对着视频重做飞行页。
+            v1.6.2 —— 自测发现的两个真 bug，加上按视频重做的搜索页。
 
-            bug
-            · 上一版推镜头变量算了没接相机，进飞行页直接 zoom 14.6。
-              现在真接上了：4.0 → 16.0 用 1600ms 推到出发机场，停 1000ms，
-              再用 15600ms 匀速拉到 2.0。镜头中心前 1.6 秒钉在机场，之后交给航程点。
+            自测抓到的 bug（不是猜的，是实拉瓦片量出来的）
+            · 推镜头终点原为 z2，但高德 z2 返回纯白空瓦片（实测 1 种颜色），
+              动画最后一帧会整屏刷白。终点改为 z3（实测 57 种颜色，有内容）。
+              16.0 → 3.0 匀速，13 个级别摊到 15600ms。
+            · 高德矢量 maxZoom 原为 18，实测 z18 同样是空图，收到 17。
 
-            底图
-            · 换高德矢量瓦片（webrd），中文 POI 回来：杭州萧山国际机场、萧山区、钱塘江、太湖、G2504
-            · 高德是 GCJ-02，补了 WGS-84 → GCJ-02 转换，否则 z15 整体偏三四百米
-            · 右侧「▤」可在 高德矢量 / 高德卫星 之间切，署名跟着变
-            · 瓦片源加了 dim 压暗参数（0–0.95），供暗色页面复用
+            搜索页（对齐视频 0–4s）
+            · 暗色世界底图 + 搜索框放在屏高 32% 处，不再是顶部标题栏
+            · 结果卡与搜索框上沿重叠 14dp，卡顶是黄色 ✈ TOS 徽章
+            · 拼音前缀匹配：teluomu → 特罗姆瑟；打到 telu 不匹配，按视频保持空态
+            · 空态是居中浅灰胶囊「没有可选的航班」，宽 66% 屏宽
+            · 白胶囊「选择这趟航班」在卡片下方，点了写回航线并进选座
+            · 顶栏 ‹ / ⚠（记录·趋势·世界）/ ⇄（交换起降）/ 白色 ⌕ 搜索胶囊
 
-            飞行页 HUD 按视频重做
-            · 删掉顶部城市条、46sp 中央计时器、底部进度卡
-            · 左三圆钮（暂停 / 飞机 / 返回）+ 右三圆钮（定位实心 / 图层 / 书签）
-            · 底部两栏：剩余飞行时间 / 剩余飞行距离；7sp 署名常驻两角
-            · 起终点改成黄色圆角方块 + 白色飞机剪影
-
-            舱门页
-            · 背景换成压暗的卫星图 + 150 颗星点 + 径向暗角，不再是纯黑
-            · 顶部改成起落架图标 + 短横线
-
-            数据
-            · 加入特罗姆瑟 TOS（69.6833N 18.9189E），默认航线改为 HGH → TOS
-
-            已知没做完（见 差异对照表-v1.7.md 第四节 P1）
-            · 搜索页、座位图机身轮廓、登机牌深色卡面 + 点阵水印、撕票终点
-          files: out/focus-flight-v1.6.1-debug.apk
+            已知仍未做（见 差异对照表-v1.7.md 第四节 P1）
+            · 座位图机身轮廓、选座底部浮卡
+            · 登机牌深色卡面 + 点阵水印 + 独立白底条码卡、撕票终点
+            · 特罗姆瑟一带高德无数据（实测 z12 只有 1 种颜色），目的地附近是空白
+          files: out/focus-flight-v1.6.2-debug.apk
 
       - name: Keep build log on failure
         if: failure()

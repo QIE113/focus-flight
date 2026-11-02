@@ -131,7 +131,7 @@ class TileSource(
         val AMAP_VEC = TileSource(
             id = "amapv",
             attribution = "\u00a9 \u9ad8\u5fb7\u5730\u56fe AutoNavi",
-            maxZoom = 18,
+            maxZoom = 17,
             ext = "png",
             label = "\u4e2d\u6587",
             gcj = true
@@ -144,7 +144,7 @@ class TileSource(
         val AMAP_SAT = TileSource(
             id = "amaps",
             attribution = "\u00a9 \u9ad8\u5fb7\u5730\u56fe AutoNavi",
-            maxZoom = 18,
+            maxZoom = 17,
             ext = "jpg",
             label = "\u536b\u661f",
             gcj = true
