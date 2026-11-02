@@ -26,7 +26,7 @@ fun Modifier.pressScale(source: MutableInteractionSource, scaleDown: Float = 0.9
     val pressed by source.collectIsPressedAsState()
     val s by animateFloatAsState(
         targetValue = if (pressed) scaleDown else 1f,
-        animationSpec = spring(dampingRatio = 0.42f, stiffness = 1400f),
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 1200f),
         label = "press"
     )
     graphicsLayer {
@@ -46,7 +46,7 @@ fun Modifier.tapScale(scaleDown: Float = 0.96f, onClick: () -> Unit): Modifier =
 fun Appear(
     visible: Boolean = true,
     delayMillis: Int = 0,
-    riseDp: Float = 24f,
+    riseDp: Float = 14f,
     content: @Composable () -> Unit
 ) {
     var shown by remember { mutableStateOf(false) }
@@ -58,7 +58,7 @@ fun Appear(
     }
     val p by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = tween(durationMillis = 460, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
         label = "appear"
     )
     val rise = with(LocalDensity.current) { riseDp.dp.toPx() }

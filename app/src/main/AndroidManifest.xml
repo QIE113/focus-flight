@@ -2,9 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      注意：这里没有 android.permission.INTERNET。
-      没有这条权限，系统层面禁止本应用联网 —— 这是"非套壳"最硬的证明。
+      v1.5.0 起接入真实地图瓦片（Esri / CARTO），因此需要网络权限。
+      地图只是「看得更真」，专注计时本身完全不依赖网络：
+      断网时自动回落到本地经纬网底图，计时、记录、统计照常工作。
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"

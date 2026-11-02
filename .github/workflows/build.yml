@@ -43,36 +43,48 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.4.1-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.5.0-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: focus-flight-v1.4.1-debug
-          path: out/focus-flight-v1.4.1-debug.apk
+          name: focus-flight-v1.5.0-debug
+          path: out/focus-flight-v1.5.0-debug.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.4.1
-          name: 专注飞行 v1.4.1 · 把地球的卡彻底修掉
+          tag_name: v1.5.0
+          name: 专注飞行 v1.5.0 · 真地图 + 推镜头进机场
           body: |
-            v1.4.0 的地球「能跑」，但不够顺。这一版只修流畅度，视觉不变。
+            这一版把「自绘地球」换成了真实地图相机，对着参考视频逐段重做。
 
-            三个真问题：
-            · 旋转是按整数贴图列取模的（1024 分度），每秒实际只更新 5 次，所以看着一顿一顿
-            · 预计算在进入页面时同步跑在主线程，每个像素两次三角函数，会白卡上百毫秒
-            · 逐帧渲染也在主线程，每次重画都会挤掉一帧
+            地图
+            · 接入真实瓦片（Esri 卫星 / CARTO 暗色），免 key，无 API Key、无地图 SDK
+            · 自写墨卡托相机 + 瓦片金字塔：父瓦片顶位、当前级到货后交叉替换，推镜头全程不黑屏不跳格
+            · 内存 LRU 26MB + 磁盘缓存，按需拉当前视口，不做预取、不打包瓦片
+            · 断网自动回落到本地经纬网底图，计时、记录、统计完全不受影响
+            · 地图左下常驻版权署名（授权要求）
 
-            改法：
-            · 贴图横向放大 4 倍到 4096 分度，旋转步进降到屏幕 0.35 像素，肉眼连续
-            · 预计算整体挪到 Dispatchers.Default，主线程不再有一次性卡顿
-            · 逐帧渲染也挪到后台线程，主线程只负责 drawImage，再也不挤帧
-            · 三缓冲 + 缓存的辉光画笔，不再每帧新建 shader
-            · 场景卡片的点击补上按压缩放（之前漏了这 5 个格子）
+            推镜头（对齐视频 21–25 秒）
+            · 出发机场为中心，zoom 3.4 → 14.6，2600ms，CubicBezier(0.22, 0.61, 0.36, 1)
+            · 推到机场能看清跑道，再随时间缓慢拉远看全程
+            · HUD 在推镜头过半后淡入
 
-            仍然全程离线、无网络权限、无 API Key。
-          files: out/focus-flight-v1.4.1-debug.apk
+            新流程（对齐视频 18–20 秒）
+            · 撕票后进入「舱门关闭，飞行即将开始」黑场，点「出发！」才进客舱
+
+            撕票（对齐视频 14–16 秒）
+            · 票根改为在登机牌底部，向左脱出 + 逆时针旋转 + 下坠淡出
+            · 拖动跟手，30% 阈值触发震动，松手 180ms 脱出 + 640ms 下坠，无弹簧无回弹
+
+            动效节奏
+            · 进场 380ms、卡片弹入、按压回弹统一，去掉超过 400ms 的拖沓淡入
+
+            权限
+            · 新增 INTERNET / ACCESS_NETWORK_STATE，仅用于拉地图瓦片
+            · 计时与数据完全本地，飞行中不产生任何后台网络请求
+          files: out/focus-flight-v1.5.0-debug.apk
 
       - name: Keep build log on failure
         if: failure()

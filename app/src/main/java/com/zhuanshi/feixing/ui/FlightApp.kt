@@ -21,6 +21,7 @@ import com.zhuanshi.feixing.data.FlightRecord
 import com.zhuanshi.feixing.data.FlightStore
 import com.zhuanshi.feixing.data.Geo
 import com.zhuanshi.feixing.ui.screens.BoardingPassScreen
+import com.zhuanshi.feixing.ui.screens.CabinScreen
 import com.zhuanshi.feixing.ui.screens.DoneScreen
 import com.zhuanshi.feixing.ui.screens.FlightScreen
 import com.zhuanshi.feixing.ui.screens.HomeScreen
@@ -32,7 +33,7 @@ import com.zhuanshi.feixing.ui.screens.TrendScreen
 import com.zhuanshi.feixing.ui.screens.WorldScreen
 import com.zhuanshi.feixing.ui.theme.NightBg
 
-enum class Stage { Home, Seat, Scene, Ticket, Fly, Done, Records, Trend, World }
+enum class Stage { Home, Seat, Scene, Ticket, Cabin, Fly, Done, Records, Trend, World }
 
 @Composable
 fun FlightApp() {
@@ -109,7 +110,12 @@ fun FlightApp() {
                     minutes = minutes,
                     km = km,
                     onBack = { stage = Stage.Scene },
-                    onBoarded = { stage = Stage.Fly }
+                    onBoarded = { stage = Stage.Cabin }
+                )
+                Stage.Cabin -> CabinScreen(
+                    from = from,
+                    to = to,
+                    onGo = { stage = Stage.Fly }
                 )
                 Stage.Fly -> FlightScreen(
                     from = from,
