@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.zhuanshi.feixing.data.City
 import com.zhuanshi.feixing.data.EarthTexture
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.asin
@@ -42,8 +44,24 @@ import kotlin.math.sqrt
 
 private const val PI_F = 3.1415927f
 
+/** 自转速度：度 / 秒。 */
+private const val SPIN_DEG = 2.4f
+
+/** 原始贴图宽高。 */
+private const val TEX_W = 1024
+private const val TEX_H = 512
+
+/** 贴图横向放大倍数。越大，旋转的最小步进越小，越不容易看出「顿」。 */
+private const val TEX_SCALE = 4
+
+/** 放大后的贴图宽度，必须是 2 的幂，方便按位取模。 */
+private const val TEX_W2 = TEX_W * TEX_SCALE
+
+/** TEX_W2 的二进制位宽，用于行号乘法。 */
+private const val TEX_SHIFT = 12
+
 /**
- * 球面几何工具：把经纬度正交投影到屏幕上（和贴图渲染使用的是同一套倾斜角）。
+ * 球面几何工具：把经纬度正交投影到屏幕上（和贴图渲染使用同一套倾斜角）。
  */
 object SphereMath {
     const val TILT_DEG = 16f
@@ -73,28 +91,86 @@ object SphereMath {
 }
 
 /**
- * 一次预计算、之后逐帧只做整数查表的地球渲染器。
- * 每帧成本 = 直径^2 次数组读取 + 一次 setPixels，因此可以稳定跑满 60fps。
+ * 预计算 + 逐帧查表的地球渲染器。
+ *
+ * 三个关键点：
+ * 1. 预计算、逐帧渲染都跑在 Dispatchers.Default，主线程只负责把现成位图画出去，
+ *    所以再怎么算都不会掉帧；
+ * 2. 贴图先横向放大 4 倍（4096 分度），旋转按 4096 取模，屏幕上每次位移只有 0.35 像素，
+ *    肉眼是连续的。旧版按 1024 分度，每秒只跳 5 次，那才是看着「卡」的真原因；
+ * 3. 三缓冲，避免正在显示的那张被下一帧改写。
  */
 class SphereRenderer(val diameter: Int) {
-    private val n = diameter * diameter
-    private val tex = EarthTexture.pixels
-    private val texW = 1024
-    private val texH = 512
-    private val mask = texW - 1
-    private val uBase = ShortArray(n)
-    private val vIdx = ShortArray(n)
+    private val size = diameter.coerceAtMost(720)
+    private val n = size * size
+    private val mask = TEX_W2 - 1
+
+    private val base = ShortArray(n)
+    private val row = ShortArray(n)
     private val shade = ByteArray(n)
-    private val edge = ByteArray(n)
+    private val alpha = ByteArray(n)
     private val buf = IntArray(n)
-    private val frames = arrayOf(
-        Bitmap.createBitmap(diameter, diameter, Bitmap.Config.ARGB_8888),
-        Bitmap.createBitmap(diameter, diameter, Bitmap.Config.ARGB_8888)
-    )
+
+    private val frames = Array(3) { Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888) }
     private var flip = 0
 
-    init {
-        val r = diameter / 2f
+    @Volatile
+    private var tex: IntArray? = null
+
+    /** 一周被切成多少份，调用方用它判断画面是否需要重画。 */
+    val steps: Int get() = TEX_W2
+
+    /** 准备贴图与查找表。必须在后台线程调用。 */
+    suspend fun prepare() {
+        if (tex != null) return
+        withContext(Dispatchers.Default) {
+            val up = upsample()
+            buildTable()
+            tex = up
+        }
+    }
+
+    /** 把 1024 宽的贴图横向双线性放大到 4096 宽。 */
+    private fun upsample(): IntArray {
+        val src = EarthTexture.pixels
+        val out = IntArray(TEX_W2 * TEX_H)
+        val wMask = TEX_W - 1
+        var y = 0
+        while (y < TEX_H) {
+            val s = y * TEX_W
+            val d = y * TEX_W2
+            var x = 0
+            while (x < TEX_W2) {
+                val i0 = x shr 2
+                val f = x and 3
+                val c0 = src[s + i0]
+                if (f == 0) {
+                    out[d + x] = c0
+                } else {
+                    val c1 = src[s + ((i0 + 1) and wMask)]
+                    val w0 = (4 - f) shl 6
+                    val w1 = f shl 6
+                    val r0 = (c0 shr 16) and 0xFF
+                    val g0 = (c0 shr 8) and 0xFF
+                    val b0 = c0 and 0xFF
+                    val r1 = (c1 shr 16) and 0xFF
+                    val g1 = (c1 shr 8) and 0xFF
+                    val b1 = c1 and 0xFF
+                    val rr = (r0 * w0 + r1 * w1) shr 8
+                    val gg = (g0 * w0 + g1 * w1) shr 8
+                    val bb = (b0 * w0 + b1 * w1) shr 8
+                    out[d + x] = (-16777216) or (rr shl 16) or (gg shl 8) or bb
+                }
+                x++
+            }
+            y++
+        }
+        return out
+    }
+
+    /** 逐像素算出贴图坐标、光照强度、边缘透明度，之后每帧只查表。 */
+    private fun buildTable() {
+        val r = size / 2f
         val t = SphereMath.TILT_DEG * PI_F / 180f
         val ct = cos(t)
         val st = sin(t)
@@ -106,15 +182,15 @@ class SphereRenderer(val diameter: Int) {
         ly /= ll
         lz /= ll
         var y = 0
-        while (y < diameter) {
+        while (y < size) {
             val sy = ((y + 0.5f) - r) / r
             var x = 0
-            while (x < diameter) {
+            while (x < size) {
                 val sx = ((x + 0.5f) - r) / r
-                val i = y * diameter + x
+                val i = y * size + x
                 val d2 = sx * sx + sy * sy
                 if (d2 >= 1f) {
-                    edge[i] = 0
+                    alpha[i] = 0
                 } else {
                     val z = sqrt(1f - d2)
                     val nx = sx
@@ -127,15 +203,14 @@ class SphereRenderer(val diameter: Int) {
                     var u = lon / (2f * PI_F) + 0.5f
                     if (u < 0f) u += 1f
                     if (u >= 1f) u -= 1f
-                    val ui = ((u * texW).toInt()) and mask
-                    uBase[i] = ui.toShort()
-                    val vi = ((0.5f - lat / PI_F) * texH).toInt().coerceIn(0, texH - 1)
-                    vIdx[i] = vi.toShort()
+                    base[i] = (((u * TEX_W2).toInt()) and mask).toShort()
+                    val vi = ((0.5f - lat / PI_F) * TEX_H).toInt().coerceIn(0, TEX_H - 1)
+                    row[i] = vi.toShort()
                     val diff = (nx * lx + ny * ly + nz * lz).coerceAtLeast(0f)
                     val lit = (0.18f + 0.95f * diff).coerceIn(0f, 1f)
                     shade[i] = (lit * 255f).toInt().toByte()
                     val a = ((1f - sqrt(d2)) * r / 1.6f).coerceIn(0f, 1f)
-                    edge[i] = (a * 255f).toInt().toByte()
+                    alpha[i] = (a * 255f).toInt().toByte()
                 }
                 x++
             }
@@ -143,26 +218,28 @@ class SphereRenderer(val diameter: Int) {
         }
     }
 
+    /** 按给定视角经度渲染一帧。必须在后台线程调用。 */
     fun render(viewLon: Float): ImageBitmap {
-        val shift = ((viewLon / 360f) * texW).roundToInt()
+        val t = tex ?: return frames[0].asImageBitmap()
+        val shift = ((viewLon / 360f) * TEX_W2).roundToInt()
         var i = 0
         while (i < n) {
-            val a = edge[i].toInt() and 0xFF
+            val a = alpha[i].toInt() and 0xFF
             if (a == 0) {
                 buf[i] = 0
             } else {
-                val col = tex[vIdx[i].toInt() * texW + ((uBase[i].toInt() + shift) and mask)]
+                val c = t[(row[i].toInt() shl TEX_SHIFT) + ((base[i].toInt() + shift) and mask)]
                 val sh = shade[i].toInt() and 0xFF
-                val rr = (((col shr 16) and 0xFF) * sh) shr 8
-                val gg = (((col shr 8) and 0xFF) * sh) shr 8
-                val bb = ((col and 0xFF) * sh) shr 8
+                val rr = (((c shr 16) and 0xFF) * sh) shr 8
+                val gg = (((c shr 8) and 0xFF) * sh) shr 8
+                val bb = ((c and 0xFF) * sh) shr 8
                 buf[i] = (a shl 24) or (rr shl 16) or (gg shl 8) or bb
             }
             i++
         }
         val bmp = frames[flip]
-        flip = 1 - flip
-        bmp.setPixels(buf, 0, diameter, 0, 0, diameter, diameter)
+        flip = if (flip == 2) 0 else flip + 1
+        bmp.setPixels(buf, 0, size, 0, 0, size, size)
         return bmp.asImageBitmap()
     }
 }
@@ -180,8 +257,8 @@ fun Globe(
     accent: Color = Color(0xFFF5D06F)
 ) {
     BoxWithConstraints(modifier) {
-        val sideDp = min(maxWidth.value, maxHeight.value) * sphereFill
         val density = LocalDensity.current
+        val sideDp = min(maxWidth.value, maxHeight.value) * sphereFill
         val diameter = remember(sideDp) {
             with(density) { sideDp.dp.toPx() }.roundToInt().coerceIn(140, 720)
         }
@@ -189,53 +266,72 @@ fun Globe(
         val renderer = remember(diameter) { SphereRenderer(diameter) }
         var image by remember(renderer) { mutableStateOf<ImageBitmap?>(null) }
         var viewLon by remember(renderer, baseLon) { mutableFloatStateOf(baseLon - 10f) }
+        var ready by remember(renderer) { mutableStateOf(false) }
 
-        LaunchedEffect(renderer, spin, baseLon) {
+        val wPx = constraints.maxWidth.toFloat()
+        val hPx = constraints.maxHeight.toFloat()
+        val radiusPx = diameter / 2f
+        val glow = remember(wPx, hPx, radiusPx) {
+            if (wPx.isFinite() && hPx.isFinite() && wPx > 0f && hPx > 0f) {
+                Brush.radialGradient(
+                    colors = listOf(Color(0x3A4EA8FF), Color(0x1A0E4B8A), Color(0x00000000)),
+                    center = Offset(wPx / 2f, hPx / 2f),
+                    radius = radiusPx * 1.28f
+                )
+            } else {
+                null
+            }
+        }
+
+        // 预计算放到后台，主线程不会有一次性白卡。
+        LaunchedEffect(renderer) {
+            renderer.prepare()
+            ready = true
+        }
+
+        LaunchedEffect(renderer, spin, baseLon, ready) {
+            if (!ready) return@LaunchedEffect
             var last = 0L
-            var drawn = Float.NaN
+            var lastStep = Int.MIN_VALUE
             while (true) {
                 withFrameNanos { now ->
-                    val dt = if (last == 0L) 0f else (now - last) / 1000000000f
+                    val dt = if (last == 0L) 0f else (now - last) / 1_000_000_000f
                     last = now
-                    if (spin) {
-                        var next = viewLon - dt * 2.4f
+                    if (spin && dt > 0f) {
+                        var next = viewLon - dt * SPIN_DEG
                         while (next < -180f) next += 360f
                         while (next > 180f) next -= 360f
                         viewLon = next
                     }
-                    if (drawn.isNaN() || abs(viewLon - drawn) > 0.45f) {
-                        image = renderer.render(viewLon)
-                        drawn = viewLon
-                    }
+                }
+                val step = ((viewLon / 360f) * renderer.steps).roundToInt()
+                if (step != lastStep) {
+                    lastStep = step
+                    val lon = viewLon
+                    image = withContext(Dispatchers.Default) { renderer.render(lon) }
                 }
             }
         }
 
         Canvas(Modifier.fillMaxSize()) {
-            val radius = diameter / 2f
             val center = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0x3A4EA8FF), Color(0x1A0E4B8A), Color(0x00000000)),
-                    center = center,
-                    radius = radius * 1.28f
-                ),
-                radius = radius * 1.28f,
-                center = center
-            )
+            val g = glow
+            if (g != null) {
+                drawCircle(brush = g, radius = radiusPx * 1.28f, center = center)
+            }
             val img = image
             if (img != null) {
                 drawImage(
                     image = img,
                     srcOffset = IntOffset.Zero,
                     srcSize = IntSize(img.width, img.height),
-                    dstOffset = IntOffset((center.x - radius).roundToInt(), (center.y - radius).roundToInt()),
+                    dstOffset = IntOffset((center.x - radiusPx).roundToInt(), (center.y - radiusPx).roundToInt()),
                     dstSize = IntSize(diameter, diameter),
                     filterQuality = FilterQuality.Low
                 )
             }
             if (showRoute && from != null && to != null) {
-                drawGreatCircle(from, to, viewLon, radius, center, progress, accent)
+                drawGreatCircle(from, to, viewLon, radiusPx, center, progress, accent)
             }
         }
     }

@@ -56,6 +56,7 @@ import com.zhuanshi.feixing.ui.KeyValueRow
 import com.zhuanshi.feixing.ui.RoundAction
 import com.zhuanshi.feixing.ui.TopBar
 import com.zhuanshi.feixing.ui.pressScale
+import com.zhuanshi.feixing.ui.tapScale
 import com.zhuanshi.feixing.ui.globe.Globe
 import com.zhuanshi.feixing.ui.theme.Gold
 import com.zhuanshi.feixing.ui.theme.TextDim
@@ -196,7 +197,7 @@ fun SceneScreen(
                                 if (pick == item.name) Gold.copy(alpha = 0.6f) else Color(0xFF1E242E),
                                 RoundedCornerShape(16.dp)
                             )
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { pick = item.name }
+                            .tapScale(0.985f) { pick = item.name }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

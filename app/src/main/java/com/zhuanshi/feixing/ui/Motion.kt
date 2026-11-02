@@ -4,6 +4,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,12 @@ fun Modifier.pressScale(source: MutableInteractionSource, scaleDown: Float = 0.9
         scaleX = s
         scaleY = s
     }
+}
+
+/** 点一下 + 缩一下，自带 interactionSource，省得到处 remember。 */
+fun Modifier.tapScale(scaleDown: Float = 0.96f, onClick: () -> Unit): Modifier = composed {
+    val src = remember { MutableInteractionSource() }
+    this.pressScale(src, scaleDown).clickable(interactionSource = src, indication = null, onClick = onClick)
 }
 
 /** 进场：淡入 + 上浮 + 轻微放大，delay 用来做依次出现的节奏。 */
