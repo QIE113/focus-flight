@@ -76,18 +76,22 @@ class Projection(
     private val camera: Camera,
     val viewport: Size,
     val tileZoom: Int,
-    val scale: Float
+    val scale: Float,
+    val gcj: Boolean = false
 ) {
     private val z: Double = tileZoom.toDouble()
     private val world: Double = Mercator.worldSize(z)
-    private val cx: Double = Mercator.xOf(camera.lon, z)
-    private val cy: Double = Mercator.yOf(camera.lat, z)
+    private val center: DoubleArray =
+        if (gcj) Gcj02.wgs2gcj(camera.lat, camera.lon) else doubleArrayOf(camera.lat, camera.lon)
+    private val cx: Double = Mercator.xOf(center[1], z)
+    private val cy: Double = Mercator.yOf(center[0], z)
 
     fun toScreen(lat: Double, lon: Double): Offset {
-        var dx = Mercator.xOf(lon, z) - cx
+        val pt = if (gcj) Gcj02.wgs2gcj(lat, lon) else doubleArrayOf(lat, lon)
+        var dx = Mercator.xOf(pt[1], z) - cx
         if (dx > world / 2.0) dx -= world
         if (dx < -world / 2.0) dx += world
-        val dy = Mercator.yOf(lat, z) - cy
+        val dy = Mercator.yOf(pt[0], z) - cy
         return Offset(
             (viewport.width / 2.0 + dx * scale).toFloat(),
             (viewport.height / 2.0 + dy * scale).toFloat()
@@ -108,6 +112,8 @@ class TileSource(
     val maxZoom: Int,
     val ext: String,
     val label: String,
+    val gcj: Boolean = false,
+    val dim: Float = 0f,
     val urlFor: (Int, Int, Int) -> String
 ) {
     companion object {
@@ -119,6 +125,32 @@ class TileSource(
             label = "卫星"
         ) { z, x, y ->
             "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/$z/$y/$x"
+        }
+
+        /** 高德矢量路网：中文 POI 最全。坐标系 GCJ-02，用前必须过 Gcj02。 */
+        val AMAP_VEC = TileSource(
+            id = "amapv",
+            attribution = "\u00a9 \u9ad8\u5fb7\u5730\u56fe AutoNavi",
+            maxZoom = 18,
+            ext = "png",
+            label = "\u4e2d\u6587",
+            gcj = true
+        ) { z, x, y ->
+            "https://webrd0" + (1 + (x + y) % 4) +
+                ".is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x=" + x + "&y=" + y + "&z=" + z
+        }
+
+        /** 高德卫星：真实影像，同样 GCJ-02。 */
+        val AMAP_SAT = TileSource(
+            id = "amaps",
+            attribution = "\u00a9 \u9ad8\u5fb7\u5730\u56fe AutoNavi",
+            maxZoom = 18,
+            ext = "jpg",
+            label = "\u536b\u661f",
+            gcj = true
+        ) { z, x, y ->
+            "https://webst0" + (1 + (x + y) % 4) +
+                ".is.autonavi.com/appmaptile?style=6&x=" + x + "&y=" + y + "&z=" + z
         }
 
         val DARK = TileSource(
@@ -136,11 +168,12 @@ class TileSource(
 data class TileId(val z: Int, val x: Int, val y: Int)
 
 /** 当前视口需要的瓦片（已处理经度环绕）。 */
-fun visibleTiles(camera: Camera, width: Float, height: Float, maxZoom: Int): List<TileId> {
+fun visibleTiles(camera: Camera, width: Float, height: Float, maxZoom: Int, gcj: Boolean = false): List<TileId> {
     if (width <= 0f || height <= 0f) return emptyList()
     val tz = floor(camera.zoom.toDouble()).toInt().coerceIn(2, maxZoom)
-    val cx = Mercator.xOf(camera.lon, tz.toDouble())
-    val cy = Mercator.yOf(camera.lat, tz.toDouble())
+    val ct = if (gcj) Gcj02.wgs2gcj(camera.lat, camera.lon) else doubleArrayOf(camera.lat, camera.lon)
+    val cx = Mercator.xOf(ct[1], tz.toDouble())
+    val cy = Mercator.yOf(ct[0], tz.toDouble())
     val left = cx - width / 2.0
     val top = cy - height / 2.0
     val n = 1 shl tz
@@ -236,6 +269,8 @@ class TileStore(private val source: TileSource, cacheRoot: File) {
     }
 
     val maxZoom: Int get() = source.maxZoom
+    val gcj: Boolean get() = source.gcj
+    val dim: Float get() = source.dim
 
     companion object {
         const val UA = "FocusFlight/1.5 (Android; offline-first focus timer)"
@@ -253,9 +288,10 @@ private fun DrawScope.drawTileLayer(store: TileStore, camera: Camera): Pair<Bool
     val tz = floor(camera.zoom.toDouble()).toInt().coerceIn(2, store.maxZoom)
     val scale = 2.0.pow((camera.zoom - tz).toDouble()).toFloat()
     val tilePx = (256f * scale).roundToInt()
-    val proj = Projection(camera, size, tz, scale)
-    val cx = Mercator.xOf(camera.lon, tz.toDouble())
-    val cy = Mercator.yOf(camera.lat, tz.toDouble())
+    val proj = Projection(camera, size, tz, scale, store.gcj)
+    val ct = if (store.gcj) Gcj02.wgs2gcj(camera.lat, camera.lon) else doubleArrayOf(camera.lat, camera.lon)
+    val cx = Mercator.xOf(ct[1], tz.toDouble())
+    val cy = Mercator.yOf(ct[0], tz.toDouble())
     val left = cx - size.width / 2.0
     val top = cy - size.height / 2.0
     val n = 1 shl tz
@@ -356,7 +392,7 @@ fun TileMap(
     }
     LaunchedEffect(camera, vw, vh, source) {
         if (vw > 0 && vh > 0) {
-            val list = visibleTiles(camera, vw.toFloat(), vh.toFloat(), source.maxZoom)
+            val list = visibleTiles(camera, vw.toFloat(), vh.toFloat(), source.maxZoom, source.gcj)
             for (t in list) store.ensure(t.z, t.x, t.y)
         }
     }
@@ -374,6 +410,9 @@ fun TileMap(
         drawRect(Color(0xFF070A10))
         val pair = drawTileLayer(store, camera)
         if (!pair.first) drawGraticule(pair.second)
+        if (store.dim > 0f) {
+            drawRect(Color.Black.copy(alpha = store.dim.coerceIn(0f, 0.95f)))
+        }
         overlay(pair.second)
     }
 }

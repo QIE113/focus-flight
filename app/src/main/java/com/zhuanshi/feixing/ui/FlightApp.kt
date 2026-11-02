@@ -41,8 +41,8 @@ fun FlightApp() {
     val store = remember { FlightStore(context) }
     var records by remember { mutableStateOf(store.records()) }
     var stage by remember { mutableStateOf(Stage.Home) }
-    var from by remember { mutableStateOf(Cities.BEIJING) }
-    var to by remember { mutableStateOf(Cities.SHANGHAI) }
+    var from by remember { mutableStateOf(Cities.byCode("HGH")) }
+    var to by remember { mutableStateOf(Cities.byCode("TOS")) }
     var seat by remember { mutableStateOf("") }
     var scene by remember { mutableStateOf("专注") }
     var picker by remember { mutableStateOf(false) }

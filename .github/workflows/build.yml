@@ -43,48 +43,49 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.5.0-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/focus-flight-v1.6.1-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: focus-flight-v1.5.0-debug
-          path: out/focus-flight-v1.5.0-debug.apk
+          name: focus-flight-v1.6.1-debug
+          path: out/focus-flight-v1.6.1-debug.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.5.0
-          name: 专注飞行 v1.5.0 · 真地图 + 推镜头进机场
+          tag_name: v1.6.1
+          name: 专注飞行 v1.6.1 · 真地图 + 推镜头进机场
           body: |
-            这一版把「自绘地球」换成了真实地图相机，对着参考视频逐段重做。
+            v1.6.1 —— 修掉上一版没落地的改动，并对着视频重做飞行页。
 
-            地图
-            · 接入真实瓦片（Esri 卫星 / CARTO 暗色），免 key，无 API Key、无地图 SDK
-            · 自写墨卡托相机 + 瓦片金字塔：父瓦片顶位、当前级到货后交叉替换，推镜头全程不黑屏不跳格
-            · 内存 LRU 26MB + 磁盘缓存，按需拉当前视口，不做预取、不打包瓦片
-            · 断网自动回落到本地经纬网底图，计时、记录、统计完全不受影响
-            · 地图左下常驻版权署名（授权要求）
+            bug
+            · 上一版推镜头变量算了没接相机，进飞行页直接 zoom 14.6。
+              现在真接上了：4.0 → 16.0 用 1600ms 推到出发机场，停 1000ms，
+              再用 15600ms 匀速拉到 2.0。镜头中心前 1.6 秒钉在机场，之后交给航程点。
 
-            推镜头（对齐视频 21–25 秒）
-            · 出发机场为中心，zoom 3.4 → 14.6，2600ms，CubicBezier(0.22, 0.61, 0.36, 1)
-            · 推到机场能看清跑道，再随时间缓慢拉远看全程
-            · HUD 在推镜头过半后淡入
+            底图
+            · 换高德矢量瓦片（webrd），中文 POI 回来：杭州萧山国际机场、萧山区、钱塘江、太湖、G2504
+            · 高德是 GCJ-02，补了 WGS-84 → GCJ-02 转换，否则 z15 整体偏三四百米
+            · 右侧「▤」可在 高德矢量 / 高德卫星 之间切，署名跟着变
+            · 瓦片源加了 dim 压暗参数（0–0.95），供暗色页面复用
 
-            新流程（对齐视频 18–20 秒）
-            · 撕票后进入「舱门关闭，飞行即将开始」黑场，点「出发！」才进客舱
+            飞行页 HUD 按视频重做
+            · 删掉顶部城市条、46sp 中央计时器、底部进度卡
+            · 左三圆钮（暂停 / 飞机 / 返回）+ 右三圆钮（定位实心 / 图层 / 书签）
+            · 底部两栏：剩余飞行时间 / 剩余飞行距离；7sp 署名常驻两角
+            · 起终点改成黄色圆角方块 + 白色飞机剪影
 
-            撕票（对齐视频 14–16 秒）
-            · 票根改为在登机牌底部，向左脱出 + 逆时针旋转 + 下坠淡出
-            · 拖动跟手，30% 阈值触发震动，松手 180ms 脱出 + 640ms 下坠，无弹簧无回弹
+            舱门页
+            · 背景换成压暗的卫星图 + 150 颗星点 + 径向暗角，不再是纯黑
+            · 顶部改成起落架图标 + 短横线
 
-            动效节奏
-            · 进场 380ms、卡片弹入、按压回弹统一，去掉超过 400ms 的拖沓淡入
+            数据
+            · 加入特罗姆瑟 TOS（69.6833N 18.9189E），默认航线改为 HGH → TOS
 
-            权限
-            · 新增 INTERNET / ACCESS_NETWORK_STATE，仅用于拉地图瓦片
-            · 计时与数据完全本地，飞行中不产生任何后台网络请求
-          files: out/focus-flight-v1.5.0-debug.apk
+            已知没做完（见 差异对照表-v1.7.md 第四节 P1）
+            · 搜索页、座位图机身轮廓、登机牌深色卡面 + 点阵水印、撕票终点
+          files: out/focus-flight-v1.6.1-debug.apk
 
       - name: Keep build log on failure
         if: failure()
